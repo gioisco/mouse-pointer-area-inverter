@@ -1,0 +1,141 @@
+Scopo della prima prova
+======================
+Misurare il costo di una possibile lettura dello sfondo, prima di implementare
+il cursore adattivo. Questa prova NON implementa il cursore e NON dimostra
+compatibilita con la scia o equivalenza con l'invertito nativo.
+
+Esecuzione: powershell -File .\benchmark.ps1
+Richiede il desktop interattivo Windows e il compilatore .NET Framework incluso.
+Non cambia cursore, scia, tema, registro o posizione del mouse. Non salva immagini.
+
+Metodo attuale
+==============
+Compilazione x64 ottimizzata. Dieci acquisizioni iniziali fuori misura.
+Tre coppie di prove da 8 secondi, con ordine alternato:
+- idle: stesso timer da 50 ms, senza acquisizione;
+- capture: BitBlt su DIB persistente di 32x32 pixel, GdiFlush, copia e somma
+  pesata RGB. Venti acquisizioni al secondo, nessuna attesa attiva.
+Il campione e spostato di 40 pixel rispetto alla punta per limitare la presenza
+del cursore: questo NON garantisce l'esclusione della scia. Serve solo a misurare
+il costo, non e il metodo definitivo di classificazione dello sfondo.
+
+CSV: tempo CPU del processo per secondo, CPU complessiva, durata delle operazioni
+p50/p95/massima e working set. Il tempo delle operazioni include attese di
+sincronizzazione e NON e equivalente al tempo CPU o alla latenza del mouse.
+Il tempo CPU del processo e quantizzato: uno zero su una prova breve non significa
+costo nullo. 10 ms CPU/s equivalgono all'1% di un processore logico; su 8 processori
+logici sono circa lo 0,125% della capacita totale.
+La CPU complessiva comprende tutti i programmi: differenze tra prove brevi non
+dimostrano che l'acquisizione abbia causato tali differenze.
+
+Confronto richiesto prima di considerare finale una soluzione
+==========================================================
+Su stesso schermo, frequenza, alimentazione, dimensione cursore e scia a 7:
+A. Cursore normale nativo, programma spento.
+B. Invertito nativo, programma spento.
+C. Cursore adattivo, programma acceso.
+Almeno tre ripetizioni da 60 secondi, alternando l'ordine, usando la stessa
+scena locale deterministica e lo stesso percorso temporizzato del mouse.
+Ripristinare posizione, schema e impostazioni anche in caso di errore del test.
+Scenari: puntatore fermo; movimento su superficie uniforme; attraversamenti
+chiaro/scuro e testo; sfondo che cambia sotto un puntatore fermo.
+
+Misurare CPU del programma e dell'intero sistema, GPU/attivita del compositore,
+memoria, tempi dei fotogrammi e ritardo dell'adattamento. WPR e presente; la
+disponibilita di WPA/PresentMon e dei contatori GPU non e stata confermata.
+Non confrontare FPS del monitor con latenza del puntatore: per dimostrare
+quest'ultima end-to-end serve una misura visiva sincronizzata, ad esempio
+videocamera veloce e movimento noto. La sola traccia CPU non basta.
+
+Prove funzionali: mantenimento della scia; sospendere il programma e verificare
+che il movimento nativo resti operativo; chiusura normale e ripristino cursore;
+piu monitor e DPI; applicazioni con cursori propri.
+
+Obiettivo provvisorio, NON una garanzia:
+meno di 1 ms CPU/s medio per il processo, ritardo del cambio p95 entro 100 ms,
+nessun peggioramento ripetibile dei tempi dei fotogrammi rispetto ai riferimenti.
+Misurare separatamente il lavoro aggiuntivo in Windows e nel driver GPU.
+La soglia di 1 ms/s richiede prove lunghe perche i contatori CPU sono quantizzati.
+Una lettura GDI che fallisce il budget va ottimizzata o sostituita, non dichiarata
+performante solo perche Task Manager arrotonda il consumo a zero.
+
+Prova di sostituzione della freccia nativa
+========================================
+Eseguire: powershell -File .\cursor-trial.ps1
+Durata: circa 14 secondi. Dopo 2 secondi alterna per sei volte la freccia
+originale e la sua inversione RGB completa, contorno compreso.
+Muovere il mouse su una normale finestra che usa la freccia standard:
+la manina dei link, il cursore testo e i cursori propri delle applicazioni
+non vengono sostituiti. Nessuna lettura dello sfondo, nessuna scia ridisegnata.
+
+Controlli: inversione premoltiplicata alfa, doppia inversione, trasparenza e
+maschera legacy; conservazione hotspot e dimensioni; impostazione scia letta
+a ogni cambio; confronto di pixel, maschera e hotspot dopo il ripristino.
+cursor-trial.csv contiene la durata wall-clock di ogni chiamata di sostituzione.
+Queste durate NON misurano consumo CPU, latenza visiva o fluidita della scia.
+
+Esito del primo test: freccia 32x32 con alfa, hotspot 0,0; scia sempre a 7;
+sei sostituzioni riuscite (0,6391-1,6552 ms); ripristino verificato con esito OK.
+La continuita visiva della scia richiede osservazione umana e non e stata
+certificata dal controllo numerico.
+
+Ctrl+C interrompe normalmente e ripristina il backup in memoria. Una chiusura
+forzata o un crash non garantisce il ripristino: in quel caso eseguire
+.\CursorTrial.exe --restore-system
+Questo comando ricarica TUTTI i cursori dal tema configurato (non dal backup).
+La prova attuale non supporta cursori monocromatici; un cursore animato non
+ha un backup completo dei fotogrammi e non deve essere usato per questa prova.
+Evitare modifiche al tema durante il test, perche il ripristino usa il backup
+della freccia precedente. Un mutex impedisce due prove contemporanee.
+
+Modalita automatica sulla sagoma della freccia
+============================================
+Da Git Bash:
+powershell.exe -NoProfile -File ./adaptive.ps1
+Oppure, per 20 secondi:
+powershell.exe -NoProfile -File ./adaptive.ps1 -Seconds 20
+
+Durata predefinita 60 secondi, poi ripristino automatico con confronto del backup.
+La sorgente e il rettangolo della freccia nella sua posizione reale, tenendo conto
+del punto di clic. Nella decisione entrano SOLO i pixel coperti dalla sagoma:
+trasparenti esclusi; semitrasparenti pesati secondo alfa. Nessun quadrato attorno
+alla punta e nessun campione spostato. Il rettangolo serve solo al trasferimento.
+I pixel fuori dal desktop non contano e non vengono sostituiti da pixel vicini.
+
+A 20 Hz, conta la frazione pesata di pixel dello sfondo con luminosita >= 220/255.
+Inverte dal 75% di copertura chiara; torna originale al 55% o meno. Occorrono due
+letture consecutive concordi per cambiare. Non analizza quando e attivo un altro
+tipo di cursore. La scia e sempre gestita da Windows.
+
+I buffer e i due cursori sono preparati una volta. Nessuna allocazione bitmap
+a ogni lettura; nessuna sostituzione se lo stato non cambia; nessuna attesa attiva.
+Un CSV per esecuzione contiene frazione chiara, stato, tempi di cattura e cambio;
+in fondo riporta CPU del processo e p95 della cattura. Non contiene immagini.
+Il costo comprende anche la strumentazione: NON e un confronto finale con Windows.
+
+Verifica ripetibile: powershell.exe -NoProfile -File ./check-adaptive.ps1
+Apre una finestra in primo piano per 8 secondi e sposta temporaneamente il mouse
+al centro. Prima prova superfici uniformi chiare/scure, poi una superficie chiara
+ESATTAMENTE sotto la sagoma con esterno scuro e infine il contrario.
+Verifica sia le decisioni sia le frazioni attese, per rilevare interferenza del
+cursore nell'immagine e campionamento fuori dalla sagoma. Ripristina posizione
+se l'utente non ha mosso il mouse, freccia originale e scia. Il primo test e
+fallito perche la finestra restava dietro altre finestre: ora e temporaneamente
+TopMost. Il test finale ha passato tutti e quattro gli scenari con scia a 7.
+Risultato: results/adaptive-shape-check.csv; 161 campioni, 4 cambi, ripristino esatto;
+9,707 ms CPU/s del processo e cattura p95 25,164 ms in una prova breve da 8 secondi.
+
+Risultati di riferimento conservati in Git, separati dai log generati:
+- results/probe.csv: prime tre coppie idle/capture;
+- results/cursor-trial.csv: prova manuale delle sei sostituzioni;
+- results/adaptive-shape-check.csv: verifica automatica dei quattro scenari;
+- results/adaptive-manual-60s.csv: sessione manuale di 60,005 secondi, 989 campioni,
+  32 cambi, 211 letture saltate con altri cursori, 5,989 ms CPU/s del processo,
+  cattura p95 19,2875 ms. Non e un confronto controllato con Windows nativo.
+
+Limiti ancora da verificare: tracce precedenti della scia durante il movimento,
+HDR/gestione colore, DPI diversi tra monitor, contenuti protetti, costo GPU e
+confronto completo con normale/invertito nativi. Per questa versione resta GDI:
+il budget provvisorio di 1 ms CPU/s NON e stato raggiunto. La lettura riuscita
+senza cursore nel test statico non garantisce tutte le configurazioni grafiche.
+La continuita della scia durante il semplice cambio e stata confermata dall'utente.

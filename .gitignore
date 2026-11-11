@@ -1,0 +1,5 @@
+# Built locally by the PowerShell scripts.
+*.exe
+
+# Per-run measurements; selected reference results live in results/.
+/*.csv
