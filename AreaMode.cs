@@ -72,15 +72,24 @@ internal static partial class CursorTrial
                 try
                 {
                     Header shapeHeader, maskHeader;
-                    byte[] shape = ReadBitmap(info.Color, dc, out shapeHeader);
                     byte[] mask = ReadBitmap(info.Mask, dc, out maskHeader);
+                    byte[] shape;
+                    if (info.Color == IntPtr.Zero)
+                    {
+                        shapeHeader = maskHeader;
+                        shapeHeader.Height /= 2;
+                        shape = MonochromePixels(mask, checked(shapeHeader.Width * -shapeHeader.Height));
+                    }
+                    else
+                    {
+                        shape = ReadBitmap(info.Color, dc, out shapeHeader);
+                        NormalizeColor(shape, mask);
+                    }
                     cursorWidth = shapeHeader.Width; cursorHeight = -shapeHeader.Height;
                     pixels = new byte[shape.Length];
                     weights = new int[shape.Length / 4];
-                    bool alpha = false;
-                    for (int p = 3; p < shape.Length; p += 4) alpha |= shape[p] != 0;
                     for (int p = 0; p < weights.Length; p++)
-                        weights[p] = alpha ? shape[p * 4 + 3] : (mask[p * 4] == 0 ? 255 : 0);
+                        weights[p] = shape[p * 4 + 3];
                 }
                 finally { ReleaseDC(IntPtr.Zero, dc); }
                 hotX = checked((int)info.HotX); hotY = checked((int)info.HotY);
@@ -134,48 +143,61 @@ internal static partial class CursorTrial
             previous = bitmap = memory = screen = IntPtr.Zero;
         }
     }
-    static void RunAdaptive(IntPtr original, IntPtr inverted, int seconds, bool applyChanges = true)
+    static void RunAdaptive(IntPtr original, IntPtr inverted, int seconds, bool applyChanges = true, CursorSet shapes = null)
     {
         const int period = 50;
         StableState state = new StableState();
         string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adaptive-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".csv");
-        using (AreaSampler sampler = new AreaSampler(original))
+        using (AreaSampler sampler = shapes == null ? new AreaSampler(original) : null)
         using (StreamWriter log = new StreamWriter(logPath, false, System.Text.Encoding.UTF8, 65536))
         using (Process process = Process.GetCurrentProcess())
         {
             List<double> samples = new List<double>(seconds * 20);
-            log.WriteLine("elapsed_ms,event,bright_fraction,inverted,sample_ms,apply_ms");
-            Console.WriteLine("Adaptive arrow, {0}s; Ctrl+C stops and restores. Trails: {1}.", seconds, Trails());
-            Console.WriteLine("Only the standard arrow changes. Move between light and dark surfaces.");
+            log.WriteLine("elapsed_ms,event,bright_fraction,inverted,sample_ms,apply_ms" + (shapes == null ? "" : ",shape"));
+            Console.WriteLine("Adaptive {0}, {1}s; Ctrl+C stops and restores. Trails: {2}.", shapes == null ? "arrow" : "standard cursors", seconds, Trails());
+            Console.WriteLine(shapes == null ? "Only the standard arrow changes. Move between light and dark surfaces." : "Text, links and standard resize/move cursors are included; animated and application-owned cursors are unchanged.");
             Console.WriteLine("Log: {0}", logPath);
             double cpuStart = process.TotalProcessorTime.TotalMilliseconds;
             Stopwatch clock = Stopwatch.StartNew();
             int switches = 0, skips = 0, failures = 0;
+            PreparedCursor previousShape = null;
             while (!Stop.WaitOne(0) && clock.Elapsed.TotalSeconds < seconds)
             {
                 CursorInfo cursor = new CursorInfo { Size = (uint)Marshal.SizeOf(typeof(CursorInfo)) };
+                PreparedCursor activeShape = null;
                 // The input desktop can be unavailable while locked. Retain the last image and retry.
                 if (!GetCursorInfo(ref cursor)) { failures++; state.ResetPending(); }
-                else if (cursor.Flags != 1 || cursor.Cursor != LoadCursor(IntPtr.Zero, (IntPtr)Arrow))
-                { skips++; state.ResetPending(); }
+                else if (cursor.Flags != 1 || (shapes == null ? cursor.Cursor != LoadCursor(IntPtr.Zero, (IntPtr)Arrow) : !shapes.TryGet(cursor.Cursor, out activeShape)))
+                { skips++; state.ResetPending(); if (previousShape != null) previousShape.State.ResetPending(); previousShape = null; }
                 else
                 {
+                    StableState activeState = activeShape == null ? state : activeShape.State;
+                    if (activeShape != previousShape)
+                    {
+                        if (previousShape != null) previousShape.State.ResetPending();
+                        activeState.ResetPending(); previousShape = activeShape;
+                    }
+                    if (activeShape != null) activeShape.EnsureCoherentNormal();
                     int bright, count;
                     long sampleStart = Stopwatch.GetTimestamp();
-                    sampler.Sample(cursor.Position, out bright, out count);
+                    (activeShape == null ? sampler : activeShape.Sampler).Sample(cursor.Position, out bright, out count);
                     double sampleMs = (Stopwatch.GetTimestamp() - sampleStart) * 1000.0 / Stopwatch.Frequency;
                     samples.Add(sampleMs);
                     double applyMs = 0;
-                    if (state.Observe(DesiredState(state.Inverse, bright, count)))
+                    if (activeState.Observe(DesiredState(activeState.Inverse, bright, count)))
                     {
                         Stopwatch update = Stopwatch.StartNew();
-                        if (applyChanges) Apply(state.Inverse ? inverted : original);
+                        if (applyChanges)
+                        {
+                            if (activeShape == null) Apply(activeState.Inverse ? inverted : original);
+                            else activeShape.Set(activeState.Inverse);
+                        }
                         applyMs = update.Elapsed.TotalMilliseconds;
                         switches++;
-                        Console.WriteLine("{0:F1}s: {1}, light area {2:P0}", clock.Elapsed.TotalSeconds, state.Inverse ? "inverted" : "original", bright / (double)count);
+                        Console.WriteLine("{0:F1}s: {1}{2}, light area {3:P0}", clock.Elapsed.TotalSeconds, activeShape == null ? "" : activeShape.Name + " ", activeState.Inverse ? "inverted" : "original", bright / (double)count);
                     }
-                    log.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0:F1},sample,{1:F4},{2},{3:F4},{4:F4}",
-                        clock.Elapsed.TotalMilliseconds, bright / (double)count, state.Inverse ? 1 : 0, sampleMs, applyMs));
+                    log.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0:F1},sample,{1:F4},{2},{3:F4},{4:F4}{5}",
+                        clock.Elapsed.TotalMilliseconds, bright / (double)count, activeState.Inverse ? 1 : 0, sampleMs, applyMs, activeShape == null ? "" : "," + activeShape.Name));
                 }
                 // Never catch up with a burst of reads when a capture overruns its interval.
                 int delay = Math.Max(1, period - (int)(clock.Elapsed.TotalMilliseconds % period));
@@ -189,6 +211,113 @@ internal static partial class CursorTrial
                 elapsed, samples.Count, switches, skips, failures, cpu / elapsed, p95);
             log.WriteLine(string.Format(CultureInfo.InvariantCulture, "# elapsed_s={0:F3};cpu_ms_per_s={1:F3};samples={2};switches={3};skips={4};unavailable={5};capture_p95_ms={6:F4}",
                 elapsed, cpu / elapsed, samples.Count, switches, skips, failures, p95));
+        }
+    }
+
+    sealed class PreparedCursor : IDisposable
+    {
+        public readonly uint Id;
+        public readonly string Name;
+        public readonly IntPtr Shared;
+        public readonly StableState State = new StableState();
+        public AreaSampler Sampler;
+        IntPtr backup, normal, inverse;
+        byte[] before;
+        bool monochrome, touched, initialized;
+        public PreparedCursor(uint id, string name)
+        {
+            Id = id; Name = name;
+            try
+            {
+                Shared = LoadCursor(IntPtr.Zero, (IntPtr)id);
+                Check(Shared != IntPtr.Zero, "LoadCursor " + name);
+                backup = Copy(Shared); before = Pixels(backup);
+                IconInfo info;
+                Check(GetIconInfo(backup, out info), "GetIconInfo " + name);
+                try
+                {
+                    monochrome = info.Color == IntPtr.Zero;
+                    normal = monochrome ? MonochromeAppearance(info, false) : ColorAppearance(info, false);
+                }
+                finally { if (info.Mask != IntPtr.Zero) DeleteObject(info.Mask); if (info.Color != IntPtr.Zero) DeleteObject(info.Color); }
+                inverse = Inverted(backup);
+                Sampler = new AreaSampler(backup);
+                Console.WriteLine("Prepared {0} ({1})", name, monochrome ? "monochrome" : "color");
+            }
+            catch { Dispose(); throw; }
+        }
+        public void EnsureCoherentNormal()
+        {
+            if (initialized) return;
+            Set(false);
+            initialized = true;
+        }
+        public void Set(bool inverted)
+        {
+            touched = true;
+            Apply(inverted ? inverse : normal, Id);
+        }
+        public void RestoreAndVerify()
+        {
+            if (touched) { Apply(backup, Id); touched = false; }
+            Check(Equal(before, Pixels(LoadCursor(IntPtr.Zero, (IntPtr)Id))), "Restore verification " + Name);
+        }
+        public void Dispose()
+        {
+            try { if (touched) Apply(backup, Id); }
+            finally
+            {
+                if (Sampler != null) Sampler.Dispose();
+                if (inverse != IntPtr.Zero) DestroyCursor(inverse);
+                if (normal != IntPtr.Zero) DestroyCursor(normal);
+                if (backup != IntPtr.Zero) DestroyCursor(backup);
+                inverse = normal = backup = IntPtr.Zero; touched = false;
+            }
+        }
+    }
+
+    sealed class CursorSet : IDisposable
+    {
+        readonly Dictionary<IntPtr, PreparedCursor> cursors = new Dictionary<IntPtr, PreparedCursor>();
+        public CursorSet()
+        {
+            uint[] ids = { Arrow, 32513, 32515, 32516, 32642, 32643, 32644, 32645, 32646, 32648, 32649 };
+            string[] names = { "arrow", "text", "cross", "up", "resize-nwse", "resize-nesw", "resize-ew", "resize-ns", "move", "unavailable", "link" };
+            string[] values = { "Arrow", "IBeam", "Crosshair", "UpArrow", "SizeNWSE", "SizeNESW", "SizeWE", "SizeNS", "SizeAll", "No", "Hand" };
+            try
+            {
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    string path = Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Control Panel\Cursors", values[i], "") as string;
+                    if (path != null && path.EndsWith(".ani", StringComparison.OrdinalIgnoreCase)) { Console.WriteLine("Skipped animated " + names[i]); continue; }
+                    PreparedCursor cursor = new PreparedCursor(ids[i], names[i]);
+                    if (cursors.ContainsKey(cursor.Shared)) { cursor.Dispose(); throw new NotSupportedException("Aliased system cursor handles are not supported."); }
+                    cursors.Add(cursor.Shared, cursor);
+                }
+            }
+            catch { Dispose(); throw; }
+        }
+        public bool TryGet(IntPtr handle, out PreparedCursor cursor) { return cursors.TryGetValue(handle, out cursor); }
+        public void RestoreAndVerify()
+        {
+            Exception failure = null;
+            foreach (PreparedCursor cursor in cursors.Values)
+            {
+                try { cursor.RestoreAndVerify(); }
+                catch (Exception e) { Console.Error.WriteLine(e.Message); failure = e; }
+            }
+            if (failure != null) throw new Exception("Some standard cursors could not be restored/verified.", failure);
+        }
+        public void Dispose()
+        {
+            Exception failure = null;
+            foreach (PreparedCursor cursor in cursors.Values)
+            {
+                try { cursor.Dispose(); }
+                catch (Exception e) { Console.Error.WriteLine(e.Message); failure = e; }
+            }
+            cursors.Clear();
+            if (failure != null) throw new Exception("Cursor cleanup failed; run CursorTrial.exe --restore-system.", failure);
         }
     }
 }

@@ -52,11 +52,11 @@ internal static partial class CursorTrial
         Check(copy != IntPtr.Zero, "CopyImage");
         return copy;
     }
-    static void Apply(IntPtr cursor)
+    static void Apply(IntPtr cursor, uint id = Arrow)
     {
         IntPtr copy = Copy(cursor);
         // SetSystemCursor consumes the handle. Never pass our retained backup.
-        if (!SetSystemCursor(copy, Arrow))
+        if (!SetSystemCursor(copy, id))
         {
             int error = Marshal.GetLastWin32Error();
             DestroyCursor(copy);
@@ -104,6 +104,21 @@ internal static partial class CursorTrial
         byte[] legacy = { 255, 255, 255, 0, 255, 255, 255, 0 };
         Invert(legacy, new byte[] { 0, 0, 0, 0, 255, 255, 255, 0 }, false);
         if (legacy[0] != 0 || legacy[4] != 255) throw new Exception("Legacy mask self-test failed.");
+        // AND/XOR states: opaque black, opaque white, transparent, screen invert.
+        byte[] monoMask = new byte[32];
+        monoMask[8] = monoMask[12] = monoMask[20] = monoMask[28] = 255;
+        byte[] mono = MonochromePixels(monoMask, 4);
+        if (mono[0] != 0 || mono[3] != 255 || mono[4] != 255 || mono[7] != 255 ||
+            mono[11] != 0 || mono[12] != 255 || mono[15] != 255)
+            throw new Exception("Monochrome cursor expansion self-test failed.");
+        byte[] straight = { 0, 0, 219, 18, 200, 200, 200, 0 };
+        NormalizeColor(straight, new byte[8]);
+        if (straight[2] != 15 || straight[3] != 18 || straight[4] != 0)
+            throw new Exception("Straight-alpha normalization self-test failed.");
+        byte[] xorColor = { 255, 255, 255, 0, 0, 0, 0, 0 };
+        NormalizeColor(xorColor, new byte[] { 255, 255, 255, 0, 255, 255, 255, 0 });
+        if (xorColor[3] != 255 || xorColor[7] != 0)
+            throw new Exception("Legacy color XOR normalization self-test failed.");
     }
     static bool Equal(byte[] a, byte[] b)
     {
@@ -115,20 +130,47 @@ internal static partial class CursorTrial
     {
         IconInfo info;
         Check(GetIconInfo(original, out info), "GetIconInfo");
+        try { return info.Color == IntPtr.Zero ? MonochromeAppearance(info, true) : ColorAppearance(info, true); }
+        finally
+        {
+            if (info.Color != IntPtr.Zero) DeleteObject(info.Color);
+            if (info.Mask != IntPtr.Zero) DeleteObject(info.Mask);
+        }
+    }
+    static void NormalizeColor(byte[] color, byte[] mask)
+    {
+        bool alpha = false, straight = false;
+        for (int p = 0; p < color.Length; p += 4)
+        {
+            int a = color[p + 3];
+            alpha |= a != 0;
+            if (a > 0 && (color[p] > a || color[p + 1] > a || color[p + 2] > a)) straight = true;
+        }
+        for (int p = 0; p < color.Length; p += 4)
+        {
+            if (!alpha)
+            {
+                bool transparent = mask[p] != 0 && color[p] == 0 && color[p + 1] == 0 && color[p + 2] == 0;
+                color[p + 3] = transparent ? (byte)0 : (byte)255;
+            }
+            for (int c = 0; c < 3; c++)
+                if (color[p + 3] == 0) color[p + c] = 0;
+                else if (straight) color[p + c] = (byte)((color[p + c] * color[p + 3] + 127) / 255);
+        }
+    }
+    static IntPtr ColorAppearance(IconInfo info, bool inverse)
+    {
         IntPtr dc = IntPtr.Zero, bitmap = IntPtr.Zero;
         try
         {
-            // shortcut: monochrome/animated themes need a dedicated path before supporting them.
-            if (info.Color == IntPtr.Zero) throw new NotSupportedException("Monochrome cursor: trial cancelled without changes.");
             dc = GetDC(IntPtr.Zero);
             Check(dc != IntPtr.Zero, "GetDC");
             Header header, maskHeader;
             byte[] color = ReadBitmap(info.Color, dc, out header);
             byte[] mask = ReadBitmap(info.Mask, dc, out maskHeader);
             if (color.Length != mask.Length) throw new NotSupportedException("Unexpected cursor mask dimensions.");
-            bool alpha = false;
-            for (int i = 3; i < color.Length; i += 4) alpha |= color[i] != 0;
-            Invert(color, mask, alpha);
+            NormalizeColor(color, mask);
+            if (inverse) Invert(color, null, true);
             IntPtr bits;
             bitmap = CreateDIBSection(dc, ref header, 0, out bits, IntPtr.Zero, 0);
             Check(bitmap != IntPtr.Zero && bits != IntPtr.Zero, "CreateDIBSection");
@@ -137,15 +179,67 @@ internal static partial class CursorTrial
             replacement.Color = bitmap;
             IntPtr result = CreateIconIndirect(ref replacement);
             Check(result != IntPtr.Zero, "CreateIconIndirect");
-            Console.WriteLine("Cursor: {0}x{1}; hotspot {2},{3}; alpha {4}", header.Width, -header.Height, info.HotX, info.HotY, alpha);
             return result;
         }
         finally
         {
             if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
-            if (info.Color != IntPtr.Zero) DeleteObject(info.Color);
-            if (info.Mask != IntPtr.Zero) DeleteObject(info.Mask);
             if (dc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, dc);
+        }
+    }
+    [DllImport("gdi32.dll")] static extern IntPtr CreateBitmap(int width, int height, uint planes, uint bits, byte[] pixels);
+
+    static byte[] MonochromePixels(byte[] mask, int count)
+    {
+        if (mask.Length != count * 8) throw new ArgumentException("Invalid monochrome planes.");
+        byte[] color = new byte[count * 4];
+        for (int i = 0; i < count; i++)
+        {
+            bool and = mask[i * 4] != 0, xor = mask[(count + i) * 4] != 0;
+            if (and && !xor) continue;
+            byte light = xor ? (byte)255 : (byte)0;
+            color[i * 4] = color[i * 4 + 1] = color[i * 4 + 2] = light;
+            color[i * 4 + 3] = 255;
+        }
+        return color;
+    }
+
+    static IntPtr MonochromeAppearance(IconInfo info, bool inverse)
+    {
+        IntPtr dc = GetDC(IntPtr.Zero), colorBitmap = IntPtr.Zero, maskBitmap = IntPtr.Zero;
+        Check(dc != IntPtr.Zero, "GetDC monochrome cursor");
+        try
+        {
+            Header header;
+            byte[] mask = ReadBitmap(info.Mask, dc, out header);
+            int width = header.Width, height = -header.Height / 2;
+            if (height <= 0 || (-header.Height % 2) != 0) throw new NotSupportedException("Invalid monochrome mask height.");
+            byte[] color = MonochromePixels(mask, checked(width * height));
+            if (inverse) Invert(color, null, true);
+            int stride = ((width + 15) / 16) * 2;
+            byte[] transparent = new byte[checked(stride * height)];
+            for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                if (color[(y * width + x) * 4 + 3] == 0)
+                    transparent[y * stride + x / 8] |= (byte)(0x80 >> (x % 8));
+            maskBitmap = CreateBitmap(width, height, 1, 1, transparent);
+            Check(maskBitmap != IntPtr.Zero, "CreateBitmap monochrome mask");
+            header.Height = -height;
+            IntPtr bits;
+            colorBitmap = CreateDIBSection(dc, ref header, 0, out bits, IntPtr.Zero, 0);
+            Check(colorBitmap != IntPtr.Zero && bits != IntPtr.Zero, "CreateDIBSection monochrome cursor");
+            Marshal.Copy(color, 0, bits, color.Length);
+            IconInfo replacement = info;
+            replacement.Color = colorBitmap; replacement.Mask = maskBitmap;
+            IntPtr cursor = CreateIconIndirect(ref replacement);
+            Check(cursor != IntPtr.Zero, "CreateIconIndirect monochrome cursor");
+            return cursor;
+        }
+        finally
+        {
+            if (colorBitmap != IntPtr.Zero) DeleteObject(colorBitmap);
+            if (maskBitmap != IntPtr.Zero) DeleteObject(maskBitmap);
+            ReleaseDC(IntPtr.Zero, dc);
         }
     }
     static byte[] Pixels(IntPtr cursor)
@@ -200,13 +294,27 @@ internal static partial class CursorTrial
                 Console.WriteLine("All system cursors reloaded from the configured theme.");
                 return 0;
             }
-            bool adaptive = args.Length >= 1 && args[0] == "--adaptive";
+            bool allShapes = args.Length >= 1 && args[0] == "--adaptive-all";
+            bool adaptive = args.Length >= 1 && (args[0] == "--adaptive" || allShapes);
             int seconds = 60;
             if (adaptive && (args.Length > 2 || (args.Length == 2 && (!int.TryParse(args[1], out seconds) || seconds < 1 || seconds > 3600))))
                 throw new ArgumentException("Adaptive duration must be 1-3600 seconds.");
             if (!adaptive && (args.Length != 1 || args[0] != "--trial"))
-                throw new ArgumentException("Usage: CursorTrial.exe --self-test | --trial | --adaptive [seconds] | --restore-system");
+                throw new ArgumentException("Usage: CursorTrial.exe --self-test | --trial | --adaptive [seconds] | --adaptive-all [seconds] | --restore-system");
             SetProcessDPIAware();
+            if (allShapes)
+            {
+                uint initialTrails = Trails();
+                Console.CancelKeyPress += delegate(object sender, ConsoleCancelEventArgs e) { e.Cancel = true; Stop.Set(); };
+                using (CursorSet shapes = new CursorSet())
+                {
+                    RunAdaptive(IntPtr.Zero, IntPtr.Zero, seconds, true, shapes);
+                    shapes.RestoreAndVerify();
+                    Check(Trails() == initialTrails, "All-shape trail verification");
+                }
+                Console.WriteLine("All standard cursor backups restored and verified. Trail setting unchanged.");
+                return 0;
+            }
             uint trails = Trails();
             IntPtr shared = LoadCursor(IntPtr.Zero, (IntPtr)Arrow);
             Check(shared != IntPtr.Zero, "LoadCursor");

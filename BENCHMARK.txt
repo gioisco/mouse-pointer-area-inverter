@@ -198,3 +198,47 @@ La CPU complessiva varia tra 11,075% e 26,404%, quindi non consente di isolare
 un piccolo incremento nel lavoro di Windows da quello delle altre applicazioni.
 Il ripristino esatto del cursore e il mantenimento della scia sono passati.
 La prova e esplorativa: restano budget CPU, prove lunghe e misure GPU/visive.
+
+Estensione alle forme standard
+=============================
+adaptive.ps1 ora avvia --adaptive-all: freccia, selezione testo, croce,
+freccia verso l'alto, ridimensionamento nelle quattro direzioni, spostamento,
+divieto e mano dei link (11 forme). Comando Git Bash invariato:
+powershell.exe -NoProfile -File ./adaptive.ps1
+La modalita precedente sulla sola freccia resta disponibile per i confronti:
+./CursorTrial.exe --adaptive 60
+compare-native.ps1 continua intenzionalmente a confrontare la sola freccia.
+
+Ogni forma ha backup originale, variante normale/inversa, sagoma di campionamento
+e stato di isteresi separati. Tutto viene preparato una volta all'avvio; a ogni
+intervallo si legge SOLO l'area coperta dalla forma attiva. Nessuna acquisizione
+aggiuntiva per le forme inattive. Tornando a una forma, le conferme pendenti
+vengono azzerate, cosi non si combinano campioni separati da un altro cursore.
+Le immagini monocromatiche AND/XOR e quelle a colori senza alfa vengono espanse
+in una sagoma statica con trasparenza: i pixel che prima invertivano lo schermo
+diventano visibili e coerenti nell'intera forma, anziche reagire separatamente
+alle lettere. Il backup conserva esattamente il formato originale per il ripristino.
+Per l'alfa a colori, i dati con canali visibili superiori all'alfa vengono
+riconosciuti come non premoltiplicati e normalizzati prima dell'inversione.
+Questo gestisce anche il cursore rosso di divieto presente su questo sistema.
+
+I cursori animati di attesa/lavoro non vengono sostituiti: non si vuole congelare
+un singolo fotogramma. Sono saltate anche eventuali .ani assegnate alle altre
+forme standard. I cursori privati delle applicazioni, i gesti penna e le forme
+non riconosciute rimangono gestiti dall'applicazione/da Windows.
+Le impostazioni della scia restano invariate. Alla chiusura normale tutte le
+forme modificate vengono ripristinate e tutte le undici confrontate con i backup
+(pixel, maschera e punto di clic). Se un ripristino fallisce, vengono tentati
+comunque gli altri; per una terminazione forzata resta --restore-system.
+
+Verifica: powershell.exe -NoProfile -File ./check-shapes.ps1
+Finestra in primo piano per 22 secondi: passa tra le undici forme, ciascuna
+su bianco e scuro. Il test si sincronizza con l'avvio effettivo dell'analisi,
+verifica nome della forma, decisione e frazione di sfondo, poi controlla che
+tutti i backup siano stati ripristinati e che la scia non sia cambiata.
+Risultato: results/standard-shapes-check.csv; 440 campioni, 22 cambi, zero letture
+saltate, scia a 7, ripristino esatto. CPU processo 10,650 ms/s, cattura p95
+22,0329 ms in una prova funzionale da 22 secondi, NON un confronto prestazionale.
+E passato anche il test precedente di 8 secondi sulla sola freccia, compreso
+il campionamento della sagoma su uno sfondo esterno di colore opposto.
+Restano aperti il budget CPU, animazioni e cursori delle singole applicazioni.

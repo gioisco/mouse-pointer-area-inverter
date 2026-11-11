@@ -6,5 +6,5 @@ $executable = Join-Path $PSScriptRoot 'CursorTrial.exe'
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed. Stop any running trial before rebuilding.' }
 & $executable --self-test
 if ($LASTEXITCODE -ne 0) { throw 'Self-test failed.' }
-& $executable --adaptive $Seconds
+& $executable --adaptive-all $Seconds
 if ($LASTEXITCODE -ne 0) { throw 'Adaptive run failed; see console output.' }
