@@ -134,7 +134,7 @@ internal static partial class CursorTrial
             previous = bitmap = memory = screen = IntPtr.Zero;
         }
     }
-    static void RunAdaptive(IntPtr original, IntPtr inverted, int seconds)
+    static void RunAdaptive(IntPtr original, IntPtr inverted, int seconds, bool applyChanges = true)
     {
         const int period = 50;
         StableState state = new StableState();
@@ -169,7 +169,7 @@ internal static partial class CursorTrial
                     if (state.Observe(DesiredState(state.Inverse, bright, count)))
                     {
                         Stopwatch update = Stopwatch.StartNew();
-                        Apply(state.Inverse ? inverted : original);
+                        if (applyChanges) Apply(state.Inverse ? inverted : original);
                         applyMs = update.Elapsed.TotalMilliseconds;
                         switches++;
                         Console.WriteLine("{0:F1}s: {1}, light area {2:P0}", clock.Elapsed.TotalSeconds, state.Inverse ? "inverted" : "original", bright / (double)count);

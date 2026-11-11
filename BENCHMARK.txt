@@ -139,3 +139,62 @@ confronto completo con normale/invertito nativi. Per questa versione resta GDI:
 il budget provvisorio di 1 ms CPU/s NON e stato raggiunto. La lettura riuscita
 senza cursore nel test statico non garantisce tutte le configurazioni grafiche.
 La continuita della scia durante il semplice cambio e stata confermata dall'utente.
+
+Confronto controllato con i cursori nativi
+========================================
+Da Git Bash: powershell.exe -NoProfile -File ./compare-native.ps1
+Predefinito: 3 ripetizioni di 60 secondi misurati per ciascuna di 4 condizioni,
+con 2 secondi iniziali esclusi per ogni condizione (circa 12 minuti e mezzo).
+Prova esplorativa breve: aggiungere -Seconds 10 -Rounds 3 (circa 2 minuti e mezzo).
+
+Apre una finestra TopMost con superfici chiare/scure e testo e muove il mouse
+su un percorso periodico deterministico. Non interagire con altre applicazioni
+durante la misura. Esc o chiusura della finestra interrompono il test; il CSV
+parziale viene conservato. Al termine ripristina immagine e posizione originali
+e verifica pixel, maschera, punto di clic e impostazione della scia.
+
+Condizioni, in ordine ruotato a ogni ripetizione:
+- normal: freccia iniziale, senza letture dello sfondo;
+- native-inverted: arrow_i.cur fornito da Windows, caricato e scalato alle
+  dimensioni della freccia iniziale, senza letture dello sfondo;
+- capture-only: stessa analisi del prototipo, ma nessuna sostituzione;
+- adaptive: stesso ciclo di analisi con le sostituzioni effettive.
+Il riferimento invertito usa le primitive native del file cursore Windows;
+non cambia impostazioni, file di sistema o l'intero schema di cursori.
+Le due frecce native possono avere una sagoma diversa a parita di dimensioni.
+
+Il processo contiene SIA la finestra che riproduce il movimento SIA, quando
+attivo, il ciclo adattivo su un thread dedicato. Il consumo del processo include
+quindi il costo del banco di prova: confrontare le differenze tra condizioni,
+non attribuire tutto il consumo al cursore. Il CSV comparison-*.csv riporta:
+CPU del processo, CPU complessiva del sistema, numero di posizioni riprodotte,
+p95 dell'intervallo tra aggiornamenti, memoria e scia. I campioni e i tempi di
+cattura sono nei log adaptive-*.csv; la loro CPU include il banco di prova e il
+riscaldamento, mentre il CSV comparison esclude i primi 2 secondi.
+
+L'intervallo del timer WinForms NON e il tempo di un fotogramma o la latenza
+visiva del puntatore; serve a verificare la regolarita del lavoro riprodotto.
+Il movimento e temporizzato in funzione del tempo trascorso, non del numero
+di tick, per mantenere la stessa traiettoria anche con variazioni del timer.
+Il confronto non misura ancora GPU, DWM separatamente, fotogrammi o latenza
+end-to-end. La CPU totale comprende anche altre applicazioni: differenze piccole
+non dimostrano causalita o equivalenza. Per conclusioni sulla fluidita servono
+ulteriori misure. Non e una certificazione di prestazioni uguali al nativo.
+
+Prima misura controllata: results/comparison-gdi-10s.csv
+Tre ripetizioni di 10 secondi misurati, 2 secondi esclusi prima di ciascuna.
+Windows 25H2 build 26200, 8 processori logici, freccia 32x32, scia sempre a 7.
+CPU media del PROCESSO INCLUSO IL BANCO DI PROVA, in ms CPU per secondo:
+normal 20,815; native-inverted 19,243; capture-only 33,267; adaptive 33,288.
+Incremento medio adaptive-normal: 12,473 ms/s, circa 0,156% della capacita
+totale di 8 processori logici. La media non elimina la variabilita delle prove:
+adaptive va da 26,559 a 39,024 ms/s; normal da 18,728 a 23,417 ms/s.
+Capture-only e adaptive differiscono in media di appena 0,021 ms/s, molto meno
+della variabilita: e un indizio che acquisizione/analisi siano il costo dominante,
+non una stima precisa del costo delle sostituzioni.
+Gli aggiornamenti del replay sono 365-378 per prova; il loro intervallo p95
+e tra 32,413 e 32,715 ms. Non e una misura del movimento visibile o degli FPS.
+La CPU complessiva varia tra 11,075% e 26,404%, quindi non consente di isolare
+un piccolo incremento nel lavoro di Windows da quello delle altre applicazioni.
+Il ripristino esatto del cursore e il mantenimento della scia sono passati.
+La prova e esplorativa: restano budget CPU, prove lunghe e misure GPU/visive.
