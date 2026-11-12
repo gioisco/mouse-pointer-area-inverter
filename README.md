@@ -70,6 +70,12 @@ Per rimuovere il programma scegli **Esci** ed elimina la cartella estratta.
 Non vengono modificati i file dei cursori di Windows o salvate preferenze
 nel registro.
 
+## Tavolozza di prova
+
+Per provare il cursore su una gamma di sfondi apri `palette.html` dal repository nel browser,
+con l'app attiva. I menu sotto i colori raccolgono le preferenze in un riepilogo
+da copiare; la pagina non cambia le soglie dell'app e funziona offline.
+
 ## Compilazione dai sorgenti
 
 Da PowerShell, nella cartella del repository:

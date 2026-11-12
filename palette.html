@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="it">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prova il puntatore · Mouse Pointer Area Inverter</title>
+<style>
+  :root { font-family: system-ui, sans-serif; color: #18212b; background: #eef0f3; }
+  * { box-sizing: border-box; }
+  body { max-width: 1360px; margin: auto; padding: 32px 28px 60px; }
+  h1 { margin: 0 0 12px; font-size: clamp(26px, 4vw, 38px); letter-spacing: -.04em; }
+  h2 { margin: 32px 0 14px; font-size: 21px; }
+  p { max-width: 900px; line-height: 1.6; margin: 8px 0; }
+  .intro, .feedback { padding: 24px; background: white; border: 1px solid #d5dae1; border-radius: 16px; }
+  .note { color: #4c5969; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 14px; }
+  .card { background: white; border: 1px solid #c5cbd3; border-radius: 12px; overflow: hidden; }
+  .swatch { height: 140px; cursor: default; }
+  .details { padding: 12px; }
+  .caption { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
+  .number { font-size: 12px; color: #5c6878; }
+  .hex { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .reading { margin: 5px 0 10px; font-size: 12px; color: #4c5969; }
+  select, button, textarea { font: inherit; }
+  select { width: 100%; padding: 7px 5px; background: white; color: #18212b; border: 1px solid #abb5c2; border-radius: 6px; font-size: 13px; }
+  .card.marked { outline: 3px solid #237362; outline-offset: 1px; }
+  .feedback { margin-top: 32px; }
+  .feedback h2 { margin: 0 0 8px; }
+  textarea { display: block; width: 100%; min-height: 135px; margin: 14px 0; padding: 12px; border: 1px solid #abb5c2; border-radius: 8px; font-size: 13px; }
+  button { background: #1b5247; color: white; border: 0; border-radius: 8px; padding: 10px 16px; }
+  #status { display: inline-block; margin-left: 10px; font-size: 14px; }
+  :focus-visible { outline: 3px solid #237362; outline-offset: 3px; }
+  @media (max-width: 520px) { body { padding: 20px 14px; } .intro, .feedback { padding: 18px; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .swatch { height: 125px; } }
+</style>
+<body>
+<header class="intro">
+  <h1>Su quali sfondi la vorresti nera?</h1>
+  <p>Lascia l'app <strong>attiva nella tray</strong> e passa la freccia al <strong>centro del rettangolo colorato</strong>.
+    Aspetta mezzo secondo, lontano dai bordi: quello che vedi è il tuo puntatore reale.</p>
+  <p>Sotto ogni colore puoi segnare <strong>«Vorrei bianca»</strong> o <strong>«Vorrei nera»</strong>, anche per confermare il comportamento attuale.
+    Il riepilogo in fondo si può copiare e incollare nella chat.</p>
+  <p class="note">Questa pagina non cambia le impostazioni dell'app. «Oggi» indica il colore previsto su uno sfondo uniforme
+    con la soglia attuale di 220, partendo dalla freccia bianca del tema standard. Le scelte si perdono se ricarichi o chiudi la pagina.</p>
+</header>
+<main id="palette"></main>
+<section class="feedback" aria-labelledby="feedback-title">
+  <h2 id="feedback-title">Le tue preferenze</h2>
+  <p class="note">Segna soprattutto i colori su cui il comportamento non corrisponde a quello che ti aspetti.</p>
+  <textarea id="report" aria-label="Riepilogo da incollare nella chat" readonly></textarea>
+  <button type="button" id="copy">Copia riepilogo</button><span id="status" role="status"></span>
+</section>
+<noscript><p>Attiva JavaScript per visualizzare la tavolozza e raccogliere le preferenze. La pagina funziona offline.</p></noscript>
+<script>
+'use strict';
+const groups = [
+  { title: 'Il tuo beige e colori vicini', colors: ['#C8C2B6', '#D0CABE', '#D4CEC1', '#D8D1C4', '#DCD6CA', '#E4DED2'] },
+  { title: 'Grigi: dal nero al bianco, passando per la soglia', colors: [0, 32, 64, 96, 128, 160, 176, 192, 200, 208, 216, 219, 220, 224, 232, 240, 248, 255].map(value => '#' + value.toString(16).padStart(2, '0').repeat(3).toUpperCase()) },
+  { title: 'Colori saturi e pastello', colors: ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#00FFFF', '#FF00FF', '#FFB6B6', '#B6E8B6', '#B6CEFF', '#FFF0B6', '#B6E8E8', '#E8B6E8'] }
+];
+const samples = [];
+const report = document.getElementById('report');
+const status = document.getElementById('status');
+function brightness(hex) {
+  const channels = hex.slice(1).match(/../g).map(value => parseInt(value, 16));
+  return (54 * channels[0] + 183 * channels[1] + 19 * channels[2]) >> 8;
+}
+function updateReport() {
+  const selected = samples.filter(sample => sample.select.value);
+  report.value = selected.length ? 'Preferenze puntatore su sfondi uniformi (soglia attuale: 220)\n' + selected.map(sample =>
+    `${sample.number}. ${sample.hex} · luminosità ${sample.light} · oggi ${sample.current} · vorrei ${sample.select.value}`
+  ).join('\n') : 'Nessuna preferenza selezionata. Usa i menu sotto i colori.';
+  status.textContent = selected.length ? `${selected.length} preferenze selezionate` : '';
+}
+for (const group of groups) {
+  const section = document.createElement('section');
+  const heading = document.createElement('h2');
+  heading.textContent = group.title;
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  for (const hex of group.colors) {
+    const number = String(samples.length + 1).padStart(2, '0');
+    const light = brightness(hex);
+    const current = light >= 220 ? 'nera' : 'bianca';
+    const card = document.createElement('article');
+    card.className = 'card';
+    const swatch = document.createElement('div');
+    swatch.className = 'swatch';
+    swatch.style.backgroundColor = hex;
+    swatch.setAttribute('aria-label', 'Sfondo ' + hex);
+    const details = document.createElement('div');
+    details.className = 'details';
+    details.innerHTML = `<div class="caption"><span class="hex">${hex}</span><span class="number">${number}</span></div>
+      <p class="reading">Luminosità ${light} · oggi ${current}</p>`;
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', 'Colore del puntatore desiderato su ' + hex);
+    for (const [value, label] of [['', 'La mia preferenza…'], ['bianca', 'Vorrei bianca'], ['nera', 'Vorrei nera']]) {
+      const option = document.createElement('option');
+      option.value = value; option.textContent = label; select.appendChild(option);
+    }
+    select.addEventListener('change', () => { card.classList.toggle('marked', Boolean(select.value)); updateReport(); });
+    details.appendChild(select); card.append(swatch, details); grid.appendChild(card);
+    samples.push({ number, hex, light, current, select });
+  }
+  section.append(heading, grid); document.getElementById('palette').appendChild(section);
+}
+updateReport();
+document.getElementById('copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(report.value);
+    status.textContent = 'Copiato: puoi incollarlo nella chat.';
+  } catch {
+    report.focus(); report.select(); status.textContent = 'Premi Ctrl+C per copiare il testo selezionato.';
+  }
+});
+</script>
+</body>
+</html>
