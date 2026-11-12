@@ -242,3 +242,13 @@ saltate, scia a 7, ripristino esatto. CPU processo 10,650 ms/s, cattura p95
 E passato anche il test precedente di 8 secondi sulla sola freccia, compreso
 il campionamento della sagoma su uno sfondo esterno di colore opposto.
 Restano aperti il budget CPU, animazioni e cursori delle singole applicazioni.
+
+Esperimento acquisizione GDI/WGC - 12 novembre 2026
+=================================================
+Dettagli, metodo e limiti: experiments/capture/EXPERIMENT.txt.
+Risultati: results/capture-backends-10s.csv.
+Il confronto isola la sola cattura: il puntatore si muove ma NON cambia colore.
+WGC riduce il p95 della lettura da circa 20 ms a circa 1,2 ms, ma nelle tre
+ripetizioni consuma piu CPU di GDI. Non viene quindi integrato come default.
+adaptive.ps1 e il comportamento adattivo sulle undici forme restano invariati.
+Il budget CPU e il confronto complessivo GPU/latenza restano aperti.

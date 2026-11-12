@@ -1,0 +1,78 @@
+Capture backend experiment - 12 November 2026
+============================================
+These are standalone diagnostic executables. Neither is used by adaptive.ps1.
+The working application still uses GDI and adapts eleven standard cursor shapes.
+
+The user prioritizes low CPU overhead. A faster readback alone is insufficient
+reason to change the default capture method.
+
+Capability checks
+-----------------
+Desktop Duplication DXGI works on this computer. With mouse trails set to 7,
+the pointer on the captured output is not reported as a separate visible pointer.
+Microsoft documents that the pointer may be integrated into the desktop image.
+No DXGI backend was added to the application on that basis.
+https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api
+
+Windows Graphics Capture with IsCursorCaptureEnabled=false and a 50 ms minimum
+update interval passes background checks with both stationary and moving cursors.
+Every RGB pixel of a 32x32 rectangle under the arrow is checked against a known
+light/dark surface. This includes the arrow's border and the native moving trail.
+The probe does not save images and restores the mouse position after each run.
+https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscapturesession.iscursorcaptureenabled
+
+Capture-only benchmark
+----------------------
+From Git Bash at the repository root:
+powershell.exe -NoProfile -File ./compare-capture.ps1 -Seconds 10 -Rounds 3
+
+This intentionally does NOT invert the pointer. It isolates capture cost before
+changing the application. It moves the mouse inside its own window and alternates
+flat white/dark surfaces, with the same movement and checks for GDI and WGC.
+Close the test window to cancel; partial measurements remain on disk.
+
+Each condition runs in a fresh x64 process with two excluded warm-up seconds:
+- baseline: replay window only, no capture;
+- gdi: persistent screen DC, memory DC and DIB; BitBlt, GdiFlush, one buffer copy;
+- wgc: one device/session/frame pool, cursor capture disabled, persistent staging
+  texture, newest available frame retained, regional GPU copy and mapped readback.
+All three initialize the same D3D device/output before the measured interval;
+only WGC starts the capture session. That avoids charging device startup to WGC.
+Only a small region is read back, but WGC still captures the monitor internally.
+The WGC session can show a capture border; this is not a production integration.
+
+The timer is nominally 50 ms, but this WinForms harness actually completed
+159-160 reads/positions per 10 seconds, about 16 Hz. This is comparable BETWEEN
+conditions and is not the application's separate 20 Hz sampling loop. The probe
+tests the full 32x32 rectangle, not the weighted cursor silhouette. Measurements
+therefore do not directly estimate full adaptive CPU cost or response latency.
+
+Saved results: ../../results/capture-backends-10s.csv
+Three rotated-order repetitions of ten measured seconds per condition.
+Mean process CPU, including the replay window:
+  baseline: 10.377 ms CPU/s
+  GDI:      11.950 ms CPU/s (range 4.664-20.262)
+  WGC:      24.934 ms CPU/s (range 15.583-31.230)
+WGC uses more process CPU than GDI in all three paired rounds. The spread is
+substantial, so the means are exploratory, not a precise estimate of overhead.
+Readback p95 ranges:
+  GDI: 19.6736-20.7133 ms
+  WGC:  1.1947-1.2235 ms
+Process working sets are about 53 MB for baseline/GDI and 59.5 MB for WGC.
+
+Decision: retain GDI as the application default. WGC substantially reduces the
+time spent waiting for the small readback, but has not demonstrated lower CPU
+cost. No adaptive integration, eleven-shape WGC test or production performance
+claim is made. Existing shape tests remain applicable to the unchanged GDI app.
+
+Limits and follow-up
+--------------------
+GPU Engine performance counters are available on this computer, but were NOT
+recorded in these trials. System-wide CPU includes unrelated applications and
+does not isolate compositor/driver work. No GPU load, energy, frame timing or
+end-to-end pointer latency comparison has been completed. These probes do not
+prove that either capture method matches the native cursor's total cost.
+No SDK, compiler or package was installed. The comparison script references
+the Windows Graphics/Foundation metadata and existing .NET Framework assemblies.
+The probes support one selected output and a stable display configuration;
+they are not a multi-monitor or device-loss implementation.
