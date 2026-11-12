@@ -14,37 +14,44 @@
   .note { color: #4c5969; font-size: 14px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 14px; }
   .card { background: white; border: 1px solid #c5cbd3; border-radius: 12px; overflow: hidden; }
-  .swatch { height: 140px; cursor: default; }
+  .swatch { display: flex; padding: 10px 6px; gap: 4px; cursor: default; }
+  .choice { flex: 1; min-width: 0; padding: 12px 2px 8px; display: flex; flex-direction: column; align-items: center; gap: 5px; border: 2px solid transparent; border-radius: 8px; background: transparent; color: #18212b; }
+  .choice img { width: 64px; height: 64px; pointer-events: none; }
+  .choice-label, .choice-status { padding: 2px 5px; border-radius: 4px; background: #fff; color: #18212b; font-size: 12px; }
+  .choice-status { font-size: 10px; }
+  .choice[aria-pressed="true"] { border-color: #fff; box-shadow: 0 0 0 1px #18212b; }
+  .marked .choice[aria-pressed="true"] .choice-status { background: #1b5247; color: white; }
   .details { padding: 12px; }
   .caption { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
   .number { font-size: 12px; color: #5c6878; }
   .hex { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .reading { margin: 5px 0 10px; font-size: 12px; color: #4c5969; }
-  select, button, textarea { font: inherit; }
-  select { width: 100%; padding: 7px 5px; background: white; color: #18212b; border: 1px solid #abb5c2; border-radius: 6px; font-size: 13px; }
+  button, textarea { font: inherit; }
   .card.marked { outline: 3px solid #237362; outline-offset: 1px; }
   .feedback { margin-top: 32px; }
   .feedback h2 { margin: 0 0 8px; }
   textarea { display: block; width: 100%; min-height: 135px; margin: 14px 0; padding: 12px; border: 1px solid #abb5c2; border-radius: 8px; font-size: 13px; }
-  button { background: #1b5247; color: white; border: 0; border-radius: 8px; padding: 10px 16px; }
+  #copy { background: #1b5247; color: white; border: 0; border-radius: 8px; padding: 10px 16px; }
   #status { display: inline-block; margin-left: 10px; font-size: 14px; }
   :focus-visible { outline: 3px solid #237362; outline-offset: 3px; }
-  @media (max-width: 520px) { body { padding: 20px 14px; } .intro, .feedback { padding: 18px; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .swatch { height: 125px; } }
+  @media (max-width: 520px) { body { padding: 20px 14px; } .intro, .feedback { padding: 18px; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .choice img { width: 48px; height: 48px; } }
 </style>
 <body>
 <header class="intro">
-  <h1>Su quali sfondi la vorresti nera?</h1>
-  <p>Lascia l'app <strong>attiva nella tray</strong> e passa la freccia al <strong>centro del rettangolo colorato</strong>.
-    Aspetta mezzo secondo, lontano dai bordi: quello che vedi è il tuo puntatore reale.</p>
-  <p>Sotto ogni colore puoi segnare <strong>«Vorrei bianca»</strong> o <strong>«Vorrei nera»</strong>, anche per confermare il comportamento attuale.
-    Il riepilogo in fondo si può copiare e incollare nella chat.</p>
-  <p class="note">Questa pagina non cambia le impostazioni dell'app. «Oggi» indica il colore previsto su uno sfondo uniforme
-    con la soglia attuale di 220, partendo dalla freccia bianca del tema standard. Le scelte si perdono se ricarichi o chiudi la pagina.</p>
+  <h1>Bianca o nera? Confrontale sullo stesso sfondo.</h1>
+  <p>Ogni riquadro mostra <strong>entrambe le varianti</strong>. Quella indicata come <strong>«Attuale»</strong> è la scelta
+    prevista dall'app. Se preferisci l'altra, <strong>clicca direttamente su quella freccia</strong>.</p>
+  <p>Segna solo i cambi che vuoi. Per annullare un cambio, clicca di nuovo sulla variante «Attuale».
+    In fondo trovi il riepilogo da copiarmi nella chat.</p>
+  <p class="note">Le anteprime sono le frecce del tema standard Windows, ingrandite, con gli stessi colori invertiti dal programma.
+    «Attuale» è calcolato per uno sfondo uniforme con la soglia di 220: non legge lo stato dell'app.
+    Non serve spostare o modificare il puntatore reale e l'app può anche essere in pausa.
+    Le scelte si perdono se ricarichi o chiudi la pagina.</p>
 </header>
 <main id="palette"></main>
 <section class="feedback" aria-labelledby="feedback-title">
   <h2 id="feedback-title">Le tue preferenze</h2>
-  <p class="note">Segna soprattutto i colori su cui il comportamento non corrisponde a quello che ti aspetti.</p>
+  <p class="note">Il riepilogo contiene solo i riquadri in cui hai scelto di cambiare colore.</p>
   <textarea id="report" aria-label="Riepilogo da incollare nella chat" readonly></textarea>
   <button type="button" id="copy">Copia riepilogo</button><span id="status" role="status"></span>
 </section>
@@ -57,6 +64,7 @@ const groups = [
   { title: 'Colori saturi e pastello', colors: ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#00FFFF', '#FF00FF', '#FFB6B6', '#B6E8B6', '#B6CEFF', '#FFF0B6', '#B6E8E8', '#E8B6E8'] }
 ];
 const samples = [];
+const cursorImages = { bianca: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAADpSURBVFhH7ZFBCoJAFEC/ZODCkagLRGeoY3S3Fl2hGxS4qX1tWrSUFoJgO0EGLEF//GZhTlYb/W7mgeD8QebNEwBEDP1CAvZCnzIiYkREAG+v7zChBJRELyUqgZ5K1AWUBGuJTwGCsUSzQFGwlWgWIO6PnKPEdwEiSdKuS/wWIKLo1mWJ/wJ5nmMYhl2VqASkzMr3g9Wt9ad1lICUGd1wDuBeKgEWRKwOF/K1tLzt8XTGsiyR3q3BZKl/0TLuBsCZ1mfOmgoEwRUB3FV9j4XhmATSNEXfP3D9Ch17BzCa6VODwWAwGAxt8wQzLT4/gGqefQAAAABJRU5ErkJggg==', nera: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAD6SURBVFhH7ZGxCoJAGIBVMEM5EJcCQeTwAQy0oa1JiHqrxgYHlx7A1oh0dO4B3HoBX8C5ix8SjiMryDuX++AHveO4z0+lae6NMiYgEMeLmF0XxqsAqapzxe4JoROAGaUELTBKCVZAeIl3AkJL9AlomqASfQIwxkTnX+KTAIxtI74lvgnAuO6MX4lfBHRdJ57n8SlBC5im8aAvhq9mhz3/N52AZU1JFIVRXd9qSoI/IACXt23TwntxPRXLOCSqqhJ43m5WO/bMoOT5Mff9uU+vZdkhgwJBgEma7lN6TwiOgxwQQAiRJFmL+RUsZXkpMXYwuy6RSCQSiWRonuJPvLd4GJegAAAAAElFTkSuQmCC' };
 const report = document.getElementById('report');
 const status = document.getElementById('status');
 function brightness(hex) {
@@ -64,11 +72,11 @@ function brightness(hex) {
   return (54 * channels[0] + 183 * channels[1] + 19 * channels[2]) >> 8;
 }
 function updateReport() {
-  const selected = samples.filter(sample => sample.select.value);
+  const selected = samples.filter(sample => sample.wanted);
   report.value = selected.length ? 'Preferenze puntatore su sfondi uniformi (soglia attuale: 220)\n' + selected.map(sample =>
-    `${sample.number}. ${sample.hex} · luminosità ${sample.light} · oggi ${sample.current} · vorrei ${sample.select.value}`
-  ).join('\n') : 'Nessuna preferenza selezionata. Usa i menu sotto i colori.';
-  status.textContent = selected.length ? `${selected.length} preferenze selezionate` : '';
+    `${sample.number}. ${sample.hex} · luminosità ${sample.light} · oggi ${sample.current} · vorrei ${sample.wanted}`
+  ).join('\n') : 'Nessun cambio richiesto. Clicca sulle frecce alternative che preferisci.';
+  status.textContent = selected.length ? `${selected.length} cambi richiesti` : '';
 }
 for (const group of groups) {
   const section = document.createElement('section');
@@ -86,19 +94,34 @@ for (const group of groups) {
     swatch.className = 'swatch';
     swatch.style.backgroundColor = hex;
     swatch.setAttribute('aria-label', 'Sfondo ' + hex);
+    const sample = { number, hex, light, current, wanted: '' };
+    const choices = [];
+    for (const [color, label] of [['bianca', 'Bianca'], ['nera', 'Nera']]) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'choice';
+      button.setAttribute('aria-label', `Freccia ${color} su ${hex}${color === current ? ', attuale' : ', alternativa'}`);
+      button.setAttribute('aria-pressed', String(color === current));
+      const image = document.createElement('img'); image.src = cursorImages[color]; image.alt = '';
+      const name = document.createElement('span'); name.className = 'choice-label'; name.textContent = label;
+      const badge = document.createElement('span'); badge.className = 'choice-status'; badge.textContent = color === current ? 'Attuale' : 'Alternativa';
+      button.append(image, name, badge); swatch.appendChild(button);
+      choices.push({ color, button, badge });
+      button.addEventListener('click', () => {
+        sample.wanted = color === current ? '' : color;
+        card.classList.toggle('marked', Boolean(sample.wanted));
+        for (const choice of choices) {
+          choice.button.setAttribute('aria-pressed', String(choice.color === (sample.wanted || current)));
+          choice.badge.textContent = choice.color === current ? 'Attuale' : (sample.wanted ? 'Scelta' : 'Alternativa');
+        }
+        updateReport();
+      });
+    }
     const details = document.createElement('div');
     details.className = 'details';
     details.innerHTML = `<div class="caption"><span class="hex">${hex}</span><span class="number">${number}</span></div>
       <p class="reading">Luminosità ${light} · oggi ${current}</p>`;
-    const select = document.createElement('select');
-    select.setAttribute('aria-label', 'Colore del puntatore desiderato su ' + hex);
-    for (const [value, label] of [['', 'La mia preferenza…'], ['bianca', 'Vorrei bianca'], ['nera', 'Vorrei nera']]) {
-      const option = document.createElement('option');
-      option.value = value; option.textContent = label; select.appendChild(option);
-    }
-    select.addEventListener('change', () => { card.classList.toggle('marked', Boolean(select.value)); updateReport(); });
-    details.appendChild(select); card.append(swatch, details); grid.appendChild(card);
-    samples.push({ number, hex, light, current, select });
+    card.append(swatch, details); grid.appendChild(card);
+    samples.push(sample);
   }
   section.append(heading, grid); document.getElementById('palette').appendChild(section);
 }

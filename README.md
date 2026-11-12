@@ -72,9 +72,11 @@ nel registro.
 
 ## Tavolozza di prova
 
-Per provare il cursore su una gamma di sfondi apri `palette.html` dal repository nel browser,
-con l'app attiva. I menu sotto i colori raccolgono le preferenze in un riepilogo
-da copiare; la pagina non cambia le soglie dell'app e funziona offline.
+Per provare il cursore su una gamma di sfondi apri `palette.html` dal repository nel browser.
+La pagina mostra la freccia bianca e quella nera su ciascuno sfondo e indica la
+scelta prevista dalle soglie attuali. Clicca sulla variante alternativa solo
+dove vuoi cambiarla e copia il riepilogo. Non serve che l'app sia attiva:
+la pagina non ne modifica le soglie e funziona offline.
 
 ## Compilazione dai sorgenti
 
