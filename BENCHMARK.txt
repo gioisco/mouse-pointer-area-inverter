@@ -265,3 +265,15 @@ Il risultato NON e equivalenza al nativo. L'utente ha confermato un tetto medio
 di 0,5% della CPU totale aggiuntiva, considerando programma e incremento osservato
 nel compositore, oltre a nessun rallentamento percepibile. A 20 Hz, il caso in
 movimento supera il budget e richiede ulteriori ottimizzazioni.
+
+Campionamento a 10 Hz - 12 novembre 2026
+======================================
+La conferma immediata sulle aree uniformi permette di ridurre le catture senza
+raddoppiare il ritardo su bianco/nero. Le aree miste mantengono due conferme.
+Undici forme verificate, scia a 7, ripristino esatto; p95 della conferma della
+chiamata SetSystemCursor dopo Paint 110,48 ms (non latenza fisica dello schermo).
+Tre ripetizioni CPU per caso: incremento medio programma+dwm dello 0,1599% da
+fermo e 0,2043% in movimento, entro il budget concordato dello 0,5%.
+Dati: results/runtime-gdi-100ms.csv e results/runtime-gdi-100ms-gpu.csv.
+assess-performance.ps1 riproduce il calcolo. Metodo e limiti: PERFORMANCE.txt.
+Restano da verificare uso prolungato e comportamento sotto carico.

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
@@ -23,6 +24,7 @@ internal static class CheckShapes
         StringBuilder captured = new StringBuilder();
         string errors = "";
         Exception failure = null;
+        List<long> paintTimes = new List<long>();
         try
         {
             for (int i = 0; i < ids.Length; i++)
@@ -45,6 +47,7 @@ internal static class CheckShapes
                     {
                         target = form.PointToScreen(new Point(250, 130));
                         Cursor.Position = target; form.Activate(); form.Refresh();
+                        paintTimes.Add(Stopwatch.GetTimestamp());
                         child = new Process { StartInfo = new ProcessStartInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CursorTrial.exe"), "--adaptive-all 22") {
                             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
                             WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory
@@ -72,6 +75,7 @@ internal static class CheckShapes
                         form.BackColor = stage % 2 == 0 ? Color.White : Color.FromArgb(30, 30, 30);
                         form.Text = names[stage / 2] + (stage % 2 == 0 ? " / light" : " / dark");
                         form.Refresh();
+                        paintTimes.Add(Stopwatch.GetTimestamp());
                     }
                     if (child != null && child.HasExited) { timer.Stop(); form.Close(); }
                 };
@@ -87,14 +91,25 @@ internal static class CheckShapes
             foreach (string line in output.Split('\n')) if (line.StartsWith("Log: ")) report = line.Substring(5).Trim();
             if (report == null) throw new Exception("Missing all-shape report.");
             int[] counts = new int[ids.Length * 2];
+            List<double> latencies = new List<double>();
             foreach (string line in File.ReadAllLines(report))
             {
+                if (line.StartsWith("# switch_qpc="))
+                {
+                    string[] metadata = line.Substring(2).Split(';');
+                    long timestamp = long.Parse(metadata[0].Substring("switch_qpc=".Length), CultureInfo.InvariantCulture);
+                    int phase = paintTimes.Count - 1;
+                    while (phase >= 0 && paintTimes[phase] > timestamp) phase--;
+                    if (phase > 0 && metadata[1] == "inverse=" + (phase % 2 == 0 ? "1" : "0") && metadata[2] == "shape=" + names[phase / 2])
+                        latencies.Add((timestamp - paintTimes[phase]) * 1000.0 / Stopwatch.Frequency);
+                    continue;
+                }
                 string[] fields = line.Split(',');
                 if (fields.Length != 7 || fields[1] != "sample") continue;
                 double elapsed = double.Parse(fields[0], CultureInfo.InvariantCulture);
                 int stage = (int)(elapsed / 1000);
                 double within = elapsed % 1000;
-                if (stage >= counts.Length || within < 400 || within > 700) continue;
+                if (stage >= counts.Length || within < 400 || within > 850) continue;
                 if (fields[6] != names[stage / 2] || fields[3] != (stage % 2 == 0 ? "1" : "0"))
                     throw new Exception("Unexpected cursor/state in stage " + stage + ": " + line);
                 double light = double.Parse(fields[2], CultureInfo.InvariantCulture);
@@ -106,6 +121,12 @@ internal static class CheckShapes
                 if (counts[stage] < 3) throw new Exception("Insufficient samples for " + names[stage / 2] + " stage " + stage);
             if (!output.Contains("All standard cursor backups restored and verified. Trail setting unchanged."))
                 throw new Exception("All-shape restoration was not verified.");
+            if (latencies.Count > 0)
+            {
+                latencies.Sort();
+                Console.WriteLine("Paint-to-SetSystemCursor acknowledgement (not physical display latency): p95 {0:F2} ms, max {1:F2} ms, samples {2}",
+                    latencies[(int)Math.Ceiling(latencies.Count * .95) - 1], latencies[latencies.Count - 1], latencies.Count);
+            }
             Console.WriteLine("PASS: 11 standard shapes on light/dark backgrounds, cursor-independent capture, all backups restored.");
             return 0;
         }

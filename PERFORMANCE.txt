@@ -7,6 +7,8 @@ nessun rallentamento percepibile. Con otto processori logici il tetto equivale
 a 40 ms CPU/s aggiuntivi nelle componenti misurate. Il precedente obiettivo
 provvisorio di 1 ms CPU/s non era una soglia concordata con l'utente.
 Non confondere un budget pratico con una dimostrazione di costo nullo.
+La variante attuale a 100 ms rientra nel budget nelle prove completate:
+0,1599% da fermo e 0,2043% in movimento. Dettagli e limiti in fondo.
 
 Confronto sul programma reale
 ----------------------------
@@ -101,7 +103,66 @@ quindi il requisito pratico. Restano ottimizzazione, confronto sotto carico e
 controlli su fluidita, memoria/risorse e uso continuativo.
 Non presentare l'interfaccia o il confezionamento come soluzione di questo limite.
 
+Tentativo a 75 ms: non sufficiente per il budget
+----------------------------------------------
+Dopo la scelta del budget di 0,5%, e stata provata una variante da 75 ms
+(13,33 Hz) per ridurre le letture dello schermo. Le regole di sagoma, isteresi
+e conferma restano uguali; non si cambia movimento o scia nativi.
+Il test delle undici forme e passato: adaptive-20261112-112500.csv, 294 campioni,
+22 cambi, ripristino verificato e scia a 7. Il suo costo CPU non e un confronto
+controllato e non dimostra il rispetto del budget.
+La prova automatica delle undici forme e salvata in results/standard-shapes-75ms.csv.
+L'utente ha giudicato la reattivita apparentemente buona. La successiva prova
+CPU/GPU e salvata in results/runtime-gdi-75ms.csv e results/runtime-gdi-75ms-gpu.csv.
+Tre ripetizioni valide: differenza media osservata programma+dwm rispetto al
+normale 0,589% da fermo e 0,482% in movimento. Il caso da fermo supera il tetto;
+la sola riduzione del campionamento non giustifica una dichiarazione di successo.
+
+Esperimenti sul contesto di cattura
+----------------------------------
+results/capture-locality-10s.csv confronta baseline, DC globale, DC del singolo
+monitor e WGC, includendo la CPU del compositore oltre a quella del processo.
+results/capture-dc-lifetime-10s.csv confronta DC persistente e rilascio a ogni
+lettura. I controlli dei pixel sono passati, ma nessuna delle due variazioni
+GDI ha dimostrato un vantaggio complessivo utile. WGC e risultata piu costosa
+in questo confronto. Sono diagnostiche isolate, non modifiche integrate.
+Dettagli e comandi: experiments/capture/EXPERIMENT.txt.
+
+Variante a 100 ms, confronto completato
+-------------------------------------
+La nuova variante legge a 10 Hz e conserva la conferma su due campioni nelle
+aree miste. Sulle aree con almeno 99% o al massimo 1% di copertura chiara il
+cambio e immediato al primo campione. L'isteresi del 75%/55% rimane invariata.
+Questo mira a ridurre le letture mantenendo la risposta sulle superfici uniformi.
+I test numerici coprono le soglie e i due percorsi, immediato e confermato.
+Il controllo delle undici forme e passato: results/standard-shapes-100ms.csv,
+220 campioni, 22 cambi, nessun salto, scia a 7 e ripristino esatto.
+Su 21 transizioni controllate, il tempo tra Paint del nuovo sfondo e conferma
+della chiamata SetSystemCursor ha p95 110,48 ms e massimo 115,97 ms. Non e
+latenza fisica dello schermo o del movimento del puntatore.
+Il confronto CPU/GPU a 100 ms e completato: results/runtime-gdi-100ms.csv e
+results/runtime-gdi-100ms-gpu.csv. Tutte le 18 condizioni sono valide, con
+controlli funzionali e ripristino superati. Tre ripetizioni per scenario:
+                       CPU app ms/s   incremento medio   minimo     massimo
+Fermo                      5,725           0,1599%       0,0214%    0,2825%
+Movimento                  7,806           0,2043%       0,1170%    0,2528%
+L'incremento e (CPU app + CPU dwm adattivo - CPU dwm normale) / 80 su questo PC
+con otto processori logici. Entrambe le medie rispettano il tetto dello 0,5%.
+Non e una certificazione di latenza fisica, equivalenza GPU o uso prolungato.
+Il fast path reagisce al primo campione uniforme; le aree miste richiedono due
+campioni e possono richiedere circa 200 ms piu il costo di cattura/applicazione.
+Il riscontro manuale positivo dell'utente riguardava la variante precedente
+a 75 ms; non sostituisce una prova d'uso della nuova variante a 100 ms.
+
+Valutazione riproducibile del budget (nessun movimento del mouse):
+powershell.exe -NoProfile -File ./assess-performance.ps1 -Report ./results/runtime-gdi-100ms.csv
+Lo script richiede almeno tre ripetizioni complete e contatori disponibili;
+riporta media, estremi e rispetto del budget per ciascuno scenario.
+Il controller registra target_sample_period_ms e adatta il controllo della
+copertura dei campioni alla frequenza configurata. Avvisare l'utente prima di
+ogni prova che muove il mouse; non assumere disponibilita senza preavviso.
+
 Sorgenti della prova, SHA-256:
 CursorTrial.cs 8D16445E39E90A17CB7B94DFF80D79C3F74AF1EFC40820BF87FCD26ABFFBA1B2
-AreaMode.cs 1E6BCBC827F95545EEDF04E332732B2A81AF44E7D07AD7A9CDB90935E0F6B18B
-PerformanceGate.cs 11528A2931703DF68295F7238299B82E663561C2FBF3C051694BAE003F2F5AF2
+AreaMode.cs FD65C3C2328A38BA9461C1EACA1AC277BD8C920FE1908B9EF417A0C4D3CD24A7
+PerformanceGate.cs 0B38E325A89EE639958DFD5BFD0431167B7C7BF670B4AA89B21B6B20DA00347C

@@ -214,7 +214,7 @@ internal static partial class CursorTrial
                         e.Graphics.DrawString("Text on a dark background", SystemFonts.DefaultFont, Brushes.White, 320, 30 + row * 40);
                     }
                 };
-                log.WriteLine("round,scenario,mode,seconds,application_cpu_ms_per_s,replay_cpu_ms_per_s,dwm_cpu_ms_per_s,system_busy_percent,application_gpu_busiest_engine_mean_percent,dwm_gpu_busiest_engine_mean_percent,application_gpu_counters,dwm_gpu_counters,gpu_errors,gpu_status,replay_updates,replay_tick_p95_ms,application_working_set_bytes,application_private_bytes,application_samples,application_switches,trails,logical_processors,dwm_cpu_status");
+                log.WriteLine("round,scenario,mode,seconds,application_cpu_ms_per_s,replay_cpu_ms_per_s,dwm_cpu_ms_per_s,system_busy_percent,application_gpu_busiest_engine_mean_percent,dwm_gpu_busiest_engine_mean_percent,application_gpu_counters,dwm_gpu_counters,gpu_errors,gpu_status,replay_updates,replay_tick_p95_ms,application_working_set_bytes,application_private_bytes,application_samples,application_switches,trails,logical_processors,dwm_cpu_status,target_sample_period_ms");
                 gpuLog.WriteLine("round,mode,scenario,seconds,scope,counter_count,busiest_engine_percent,busiest_engine_instance");
                 Action finishChild = delegate {
                     if (child == null) return;
@@ -351,15 +351,15 @@ internal static partial class CursorTrial
                                     throw new Exception("The stationary light surface changed; comparison invalidated.");
                                 controlledSamples++;
                             }
-                            if (controlledSamples < (seconds - 1) * 18) throw new Exception("Too many missing controlled adaptive samples; comparison invalidated.");
+                            if (controlledSamples < (seconds - 1) * (1000.0 / SamplePeriodMilliseconds) * .9) throw new Exception("Too many missing controlled adaptive samples; comparison invalidated.");
                         }
                         intervals.Sort();
                         double p95 = intervals.Count == 0 ? 0 : intervals[PercentileIndex(intervals.Count)];
                         double appGpu = gpu.AppSamples == 0 ? double.NaN : gpu.AppTotal / gpu.AppSamples;
                         double dwmGpu = gpu.DwmSamples == 0 ? double.NaN : gpu.DwmTotal / gpu.DwmSamples;
-                        log.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3:F3},{4:F3},{5:F3},{6:F3},{7:F3},{8:F6},{9:F6},{10},{11},{12},{13},{14},{15:F3},{16},{17},{18},{19},{20},{21},{22}",
+                        log.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3:F3},{4:F3},{5:F3},{6:F3},{7:F3},{8:F6},{9:F6},{10},{11},{12},{13},{14},{15:F3},{16},{17},{18},{19},{20},{21},{22},{23}",
                             index / 6 + 1, scenario, mode, elapsed, appCpu, hostCpu, dwmCpu, busy, appGpu, dwmGpu, gpu.AppCount, gpu.DwmCount, gpu.ReadErrors, gpu.Status,
-                            replayUpdates, p95, memory, privateBytes, samples, switches, Trails(), Environment.ProcessorCount, dwmCpuReader.Status));
+                            replayUpdates, p95, memory, privateBytes, samples, switches, Trails(), Environment.ProcessorCount, dwmCpuReader.Status, SamplePeriodMilliseconds));
                         log.Flush(); gpuLog.Flush(); gpu.Dispose(); gpu = null;
                         Console.WriteLine("Measured {0}/{1}: application CPU {2:F3} ms/s; compositor CPU {3:F3} ms/s; real switches {4}", scenario, mode, appCpu, dwmCpu, switches);
                         index++;

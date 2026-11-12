@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 
 internal static partial class CursorTrial
 {
+    const int SamplePeriodMilliseconds = 100;
     [StructLayout(LayoutKind.Sequential)] struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] struct CursorInfo
     {
@@ -26,14 +27,18 @@ internal static partial class CursorTrial
         if (total <= 0) throw new ArgumentException("Empty area.");
         return inverse ? (long)bright * 100 > (long)total * 55 : (long)bright * 100 >= (long)total * 75;
     }
+    static bool UniformArea(int bright, int total)
+    {
+        return (long)bright * 100 >= (long)total * 99 || (long)bright * 100 <= total;
+    }
     sealed class StableState
     {
         public bool Inverse;
         int confirmations;
-        public bool Observe(bool desired)
+        public bool Observe(bool desired, bool uniform = false)
         {
             if (desired == Inverse) { confirmations = 0; return false; }
-            if (++confirmations < 2) return false;
+            if (!uniform && ++confirmations < 2) return false;
             Inverse = desired;
             confirmations = 0;
             return true;
@@ -52,6 +57,11 @@ internal static partial class CursorTrial
             throw new Exception("Area return self-test failed.");
         if (Brightness(255, 255, 255) != 255 || Brightness(0, 0, 0) != 0)
             throw new Exception("Brightness self-test failed.");
+        if (!UniformArea(99, 100) || UniformArea(98, 100) || !UniformArea(1, 100) || UniformArea(2, 100))
+            throw new Exception("Uniform area boundary self-test failed.");
+        StableState uniformState = new StableState();
+        if (!uniformState.Observe(true, true) || !uniformState.Inverse || !uniformState.Observe(false, true) || uniformState.Inverse)
+            throw new Exception("Uniform area immediate transition self-test failed.");
     }
     static int Brightness(byte r, byte g, byte b) { return (54 * r + 183 * g + 19 * b) >> 8; }
 
@@ -145,16 +155,17 @@ internal static partial class CursorTrial
     }
     static void RunAdaptive(IntPtr original, IntPtr inverted, int seconds, bool applyChanges = true, CursorSet shapes = null)
     {
-        const int period = 50;
+        const int period = SamplePeriodMilliseconds;
         StableState state = new StableState();
         string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adaptive-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".csv");
         using (AreaSampler sampler = shapes == null ? new AreaSampler(original) : null)
         using (StreamWriter log = new StreamWriter(logPath, false, System.Text.Encoding.UTF8, 65536))
         using (Process process = Process.GetCurrentProcess())
         {
-            List<double> samples = new List<double>(seconds * 20);
+            List<double> samples = new List<double>((int)Math.Ceiling(seconds * 1000.0 / period) + 1);
             log.WriteLine("elapsed_ms,event,bright_fraction,inverted,sample_ms,apply_ms" + (shapes == null ? "" : ",shape"));
             Console.WriteLine("Adaptive {0}, {1}s; Ctrl+C stops and restores. Trails: {2}.", shapes == null ? "arrow" : "standard cursors", seconds, Trails());
+            Console.WriteLine("Sampling interval: {0} ms ({1:F2} Hz).", period, 1000.0 / period);
             Console.WriteLine(shapes == null ? "Only the standard arrow changes. Move between light and dark surfaces." : "Text, links and standard resize/move cursors are included; animated and application-owned cursors are unchanged.");
             Console.WriteLine("Log: {0}", logPath);
             double cpuStart = process.TotalProcessorTime.TotalMilliseconds;
@@ -184,7 +195,7 @@ internal static partial class CursorTrial
                     double sampleMs = (Stopwatch.GetTimestamp() - sampleStart) * 1000.0 / Stopwatch.Frequency;
                     samples.Add(sampleMs);
                     double applyMs = 0;
-                    if (activeState.Observe(DesiredState(activeState.Inverse, bright, count)))
+                    if (activeState.Observe(DesiredState(activeState.Inverse, bright, count), UniformArea(bright, count)))
                     {
                         Stopwatch update = Stopwatch.StartNew();
                         if (applyChanges)
@@ -193,6 +204,7 @@ internal static partial class CursorTrial
                             else activeShape.Set(activeState.Inverse);
                         }
                         applyMs = update.Elapsed.TotalMilliseconds;
+                        log.WriteLine(string.Format(CultureInfo.InvariantCulture, "# switch_qpc={0};inverse={1};shape={2}", Stopwatch.GetTimestamp(), activeState.Inverse ? 1 : 0, activeShape == null ? "arrow" : activeShape.Name));
                         switches++;
                         Console.WriteLine("{0:F1}s: {1}{2}, light area {3:P0}", clock.Elapsed.TotalSeconds, activeShape == null ? "" : activeShape.Name + " ", activeState.Inverse ? "inverted" : "original", bright / (double)count);
                     }
@@ -209,8 +221,8 @@ internal static partial class CursorTrial
             double p95 = samples.Count == 0 ? 0 : samples[(int)Math.Ceiling(samples.Count * .95) - 1];
             Console.WriteLine("{0:F1}s; samples {1}; switches {2}; skipped ticks {3}; unavailable ticks {4}; CPU {5:F3} ms/s; capture p95 {6:F3} ms.",
                 elapsed, samples.Count, switches, skips, failures, cpu / elapsed, p95);
-            log.WriteLine(string.Format(CultureInfo.InvariantCulture, "# elapsed_s={0:F3};cpu_ms_per_s={1:F3};samples={2};switches={3};skips={4};unavailable={5};capture_p95_ms={6:F4}",
-                elapsed, cpu / elapsed, samples.Count, switches, skips, failures, p95));
+            log.WriteLine(string.Format(CultureInfo.InvariantCulture, "# elapsed_s={0:F3};cpu_ms_per_s={1:F3};samples={2};switches={3};skips={4};unavailable={5};capture_p95_ms={6:F4};sample_period_ms={7};uniform_fast_path=1",
+                elapsed, cpu / elapsed, samples.Count, switches, skips, failures, p95, period));
         }
     }
 
