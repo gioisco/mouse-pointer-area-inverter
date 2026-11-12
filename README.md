@@ -39,6 +39,8 @@ Clic destro sull'icona:
 
 Un doppio clic sull'icona alterna Pausa e Riprendi. E consentita una sola
 istanza, condivisa anche con i programmi di prova del repository.
+L'icona mostra un puntatore bianco con bordo nero quando attivo e due grandi
+barre ambra quando sospeso.
 L'esecuzione continua non scrive log o CSV e non accumula campioni in memoria.
 
 Per cambiare tema o dimensione del puntatore, metti prima in pausa, modifica
@@ -95,3 +97,8 @@ puntatore. Chiudi l'app con icona prima di avviarli.
 `check-tray.ps1` verifica sul desktop reale l'inversione tramite il timer
 dell'app, le voci Pausa/Riprendi/Esci, il ripristino e l'assenza di CSV.
 Durante questa prova di circa 5 secondi non muovere il mouse e non cliccare.
+
+`check-running-app.ps1` osserva invece l'eseguibile portabile gia avviato in
+un processo separato: deve cambiare la freccia passando fra due sfondi, bianco
+e scuro. Lascia il mouse fermo per circa 3 secondi. Con `-Observe` non muove
+il puntatore e riporta per 6 secondi forma riconosciuta e copertura chiara.

@@ -6,7 +6,9 @@ $output = Join-Path $PSScriptRoot 'dist\MousePointerAreaInverter'
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 $executable = Join-Path $output 'MousePointerAreaInverter.exe'
 $sources = @('CursorTrial.cs', 'AreaMode.cs', 'TrayApp.cs') | ForEach-Object { Join-Path $PSScriptRoot $_ }
-& $compiler /nologo /optimize+ /platform:x64 /target:winexe /main:PointerApp /r:System.Windows.Forms.dll /r:System.Drawing.dll "/out:$executable" $sources
+$activeIcon = Join-Path $PSScriptRoot 'assets\pointer.ico'
+$pausedIcon = Join-Path $PSScriptRoot 'assets\pointer-paused.ico'
+& $compiler /nologo /optimize+ /platform:x64 /target:winexe /main:PointerApp /r:System.Windows.Forms.dll /r:System.Drawing.dll "/win32icon:$activeIcon" "/resource:$activeIcon,pointer.ico" "/resource:$pausedIcon,pointer-paused.ico" "/out:$executable" $sources
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione fallita. Chiudi il programma prima di ricompilare.' }
 $check = Start-Process -FilePath $executable -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru
 if ($check.ExitCode -ne 0) { throw 'Self-test fallito.' }

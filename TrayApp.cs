@@ -17,7 +17,15 @@ internal static partial class CursorTrial
         try
         {
             SelfTest(); AreaSelfTest();
-            if (selfTest) return 0;
+            if (selfTest)
+            {
+                using (Icon active = TrayContext.LoadTrayIcon("pointer.ico"))
+                using (Icon paused = TrayContext.LoadTrayIcon("pointer-paused.ico"))
+                using (Bitmap activePixels = active.ToBitmap())
+                using (Bitmap pausedPixels = paused.ToBitmap())
+                    if (active.Width < 16 || paused.Width < 16) throw new InvalidOperationException("Invalid embedded icons.");
+                return 0;
+            }
             if (args.Length != 0) throw new ArgumentException("Avvia senza argomenti.");
             using (Mutex mutex = new Mutex(false, "Local\\MousePointerAreaInverterTrial"))
             {
@@ -53,6 +61,7 @@ internal static partial class CursorTrial
         internal readonly ContextMenuStrip menu = new ContextMenuStrip();
         internal readonly ToolStripMenuItem toggle = new ToolStripMenuItem();
         readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+        Icon activeIcon, pausedIcon;
         CursorSet shapes;
         AdaptiveReader reader;
         bool disposed;
@@ -62,6 +71,8 @@ internal static partial class CursorTrial
         {
             try
             {
+                activeIcon = LoadTrayIcon("pointer.ico");
+                pausedIcon = LoadTrayIcon("pointer-paused.ico");
                 toggle.Click += delegate { TryToggle(); };
                 menu.Items.Add(toggle);
                 menu.Items.Add(new ToolStripSeparator());
@@ -83,12 +94,20 @@ internal static partial class CursorTrial
             }
             catch { Dispose(); throw; }
         }
+        internal static Icon LoadTrayIcon(string name)
+        {
+            using (System.IO.Stream stream = typeof(CursorTrial).Assembly.GetManifestResourceStream(name))
+            {
+                if (stream == null) throw new InvalidOperationException("Missing embedded icon: " + name);
+                using (Icon source = new Icon(stream, SystemInformation.SmallIconSize)) return (Icon)source.Clone();
+            }
+        }
         void UpdateStatus()
         {
             if (disposed) return;
             toggle.Text = Active ? "Pausa" : "Riprendi";
             icon.Text = "Mouse Pointer Area Inverter - " + (Active ? "Attivo" : "In pausa");
-            icon.Icon = Active ? SystemIcons.Application : SystemIcons.Warning;
+            icon.Icon = Active ? activeIcon : pausedIcon;
         }
         public void Resume()
         {
@@ -139,6 +158,8 @@ internal static partial class CursorTrial
                 finally
                 {
                     timer.Dispose(); icon.Visible = false; icon.Dispose(); menu.Dispose();
+                    if (activeIcon != null) activeIcon.Dispose();
+                    if (pausedIcon != null) pausedIcon.Dispose();
                 }
             }
             base.Dispose(disposing);
