@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 internal static partial class CursorTrial
 {
     const int SamplePeriodMilliseconds = 100;
+    const int LightThreshold = 168;
     [StructLayout(LayoutKind.Sequential)] struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] struct CursorInfo
     {
@@ -57,6 +58,16 @@ internal static partial class CursorTrial
             throw new Exception("Area return self-test failed.");
         if (Brightness(255, 255, 255) != 255 || Brightness(0, 0, 0) != 0)
             throw new Exception("Brightness self-test failed.");
+        // Uniform-background choices collected with the comparison palette.
+        uint[] preferBlack = { 0xC8C2B6, 0xD0CABE, 0xD4CEC1, 0xD8D1C4, 0xDCD6CA,
+            0xB0B0B0, 0xC0C0C0, 0xC8C8C8, 0xD0D0D0, 0xD8D8D8, 0xDBDBDB,
+            0x00FF00, 0x00FFFF, 0xFFB6B6, 0xB6E8B6, 0xB6CEFF, 0xE8B6E8 };
+        foreach (uint rgb in preferBlack)
+            if (!LightPixel((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb))
+                throw new Exception("Calibrated black-cursor preference failed: " + rgb.ToString("X6"));
+        if (LightPixel(160, 160, 160) || LightPixel(255, 0, 0) || LightPixel(0, 0, 255) || LightPixel(255, 0, 255) ||
+            LightPixel(167, 167, 167) || !LightPixel(168, 168, 168))
+            throw new Exception("Calibrated white-cursor/boundary self-test failed.");
         if (!UniformArea(99, 100) || UniformArea(98, 100) || !UniformArea(1, 100) || UniformArea(2, 100))
             throw new Exception("Uniform area boundary self-test failed.");
         StableState uniformState = new StableState();
@@ -64,6 +75,7 @@ internal static partial class CursorTrial
             throw new Exception("Uniform area immediate transition self-test failed.");
     }
     static int Brightness(byte r, byte g, byte b) { return (54 * r + 183 * g + 19 * b) >> 8; }
+    static bool LightPixel(byte r, byte g, byte b) { return Brightness(r, g, b) >= LightThreshold; }
 
     sealed class AreaSampler : IDisposable
     {
@@ -138,8 +150,7 @@ internal static partial class CursorTrial
                 int px = x + col, py = y + row;
                 if (px < clipX || px >= clipX + clipWidth || py < clipY || py >= clipY + clipHeight) continue;
                 int index = row * cursorWidth + col, p = index * 4;
-                int light = Brightness(pixels[p + 2], pixels[p + 1], pixels[p]);
-                if (light >= 220) bright += weights[index];
+                if (LightPixel(pixels[p + 2], pixels[p + 1], pixels[p])) bright += weights[index];
                 count += weights[index];
             }
             if (count == 0) throw new InvalidOperationException("No visible cursor pixels on the desktop.");

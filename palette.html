@@ -44,7 +44,7 @@
   <p>Segna solo i cambi che vuoi. Per annullare un cambio, clicca di nuovo sulla variante «Attuale».
     In fondo trovi il riepilogo da copiarmi nella chat.</p>
   <p class="note">Le anteprime sono le frecce del tema standard Windows, ingrandite, con gli stessi colori invertiti dal programma.
-    «Attuale» è calcolato per uno sfondo uniforme con la soglia di 220: non legge lo stato dell'app.
+    «Attuale» è calcolato per uno sfondo uniforme con la soglia di <span id="threshold"></span>: non legge lo stato dell'app.
     Non serve spostare o modificare il puntatore reale e l'app può anche essere in pausa.
     Le scelte si perdono se ricarichi o chiudi la pagina.</p>
 </header>
@@ -64,6 +64,8 @@ const groups = [
   { title: 'Colori saturi e pastello', colors: ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#00FFFF', '#FF00FF', '#FFB6B6', '#B6E8B6', '#B6CEFF', '#FFF0B6', '#B6E8E8', '#E8B6E8'] }
 ];
 const samples = [];
+const lightThreshold = 168;
+document.getElementById('threshold').textContent = lightThreshold;
 const cursorImages = { bianca: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAADpSURBVFhH7ZFBCoJAFEC/ZODCkagLRGeoY3S3Fl2hGxS4qX1tWrSUFoJgO0EGLEF//GZhTlYb/W7mgeD8QebNEwBEDP1CAvZCnzIiYkREAG+v7zChBJRELyUqgZ5K1AWUBGuJTwGCsUSzQFGwlWgWIO6PnKPEdwEiSdKuS/wWIKLo1mWJ/wJ5nmMYhl2VqASkzMr3g9Wt9ad1lICUGd1wDuBeKgEWRKwOF/K1tLzt8XTGsiyR3q3BZKl/0TLuBsCZ1mfOmgoEwRUB3FV9j4XhmATSNEXfP3D9Ch17BzCa6VODwWAwGAxt8wQzLT4/gGqefQAAAABJRU5ErkJggg==', nera: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAD6SURBVFhH7ZGxCoJAGIBVMEM5EJcCQeTwAQy0oa1JiHqrxgYHlx7A1oh0dO4B3HoBX8C5ix8SjiMryDuX++AHveO4z0+lae6NMiYgEMeLmF0XxqsAqapzxe4JoROAGaUELTBKCVZAeIl3AkJL9AlomqASfQIwxkTnX+KTAIxtI74lvgnAuO6MX4lfBHRdJ57n8SlBC5im8aAvhq9mhz3/N52AZU1JFIVRXd9qSoI/IACXt23TwntxPRXLOCSqqhJ43m5WO/bMoOT5Mff9uU+vZdkhgwJBgEma7lN6TwiOgxwQQAiRJFmL+RUsZXkpMXYwuy6RSCQSiWRonuJPvLd4GJegAAAAAElFTkSuQmCC' };
 const report = document.getElementById('report');
 const status = document.getElementById('status');
@@ -73,7 +75,7 @@ function brightness(hex) {
 }
 function updateReport() {
   const selected = samples.filter(sample => sample.wanted);
-  report.value = selected.length ? 'Preferenze puntatore su sfondi uniformi (soglia attuale: 220)\n' + selected.map(sample =>
+  report.value = selected.length ? `Preferenze puntatore su sfondi uniformi (soglia attuale: ${lightThreshold})\n` + selected.map(sample =>
     `${sample.number}. ${sample.hex} · luminosità ${sample.light} · oggi ${sample.current} · vorrei ${sample.wanted}`
   ).join('\n') : 'Nessun cambio richiesto. Clicca sulle frecce alternative che preferisci.';
   status.textContent = selected.length ? `${selected.length} cambi richiesti` : '';
@@ -87,7 +89,7 @@ for (const group of groups) {
   for (const hex of group.colors) {
     const number = String(samples.length + 1).padStart(2, '0');
     const light = brightness(hex);
-    const current = light >= 220 ? 'nera' : 'bianca';
+    const current = light >= lightThreshold ? 'nera' : 'bianca';
     const card = document.createElement('article');
     card.className = 'card';
     const swatch = document.createElement('div');

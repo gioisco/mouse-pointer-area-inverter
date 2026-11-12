@@ -11,6 +11,10 @@ La variante attuale a 100 ms rientra nel budget nelle prove completate:
 0,1599% da fermo e 0,2043% in movimento. Dettagli e limiti in fondo.
 Questi risultati riguardano il programma diagnostico precedente all'app con
 icona: il pacchetto portabile deve ancora ripetere il confronto completo.
+La soglia di luminosita e stata poi calibrata da 220 a 168 sulle preferenze
+raccolte in results/color-preferences-220.csv. Frequenza e copertura 75%/55%
+restano uguali, ma il numero di cambi puo variare: i benchmark precedenti
+non sono una nuova misura della versione calibrata.
 
 Confronto sul programma reale
 ----------------------------

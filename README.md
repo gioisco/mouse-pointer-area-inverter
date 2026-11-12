@@ -53,6 +53,9 @@ su, quattro ridimensionamenti, spostamento, divieto e mano/link. I cursori
 animati e quelli privati delle applicazioni non vengono modificati.
 Il campionamento avviene ogni circa 100 ms; gli sfondi misti richiedono due
 conferme per limitare i cambi ripetuti.
+Un pixel conta come chiaro da 168/255 di luminosita pesata, soglia calibrata
+con la tavolozza. L'intero cursore viene invertito quando almeno il 75% della
+copertura sotto la sagoma e chiara; torna normale al 55% o meno.
 
 Pausa e uscita normale ripristinano le copie originali. Il recupero automatico
 dopo crash o chiusura forzata non e ancora implementato: se il cursore resta
@@ -110,3 +113,5 @@ Durante questa prova di circa 5 secondi non muovere il mouse e non cliccare.
 un processo separato: deve cambiare la freccia passando fra due sfondi, bianco
 e scuro. Lascia il mouse fermo per circa 3 secondi. Con `-Observe` non muove
 il puntatore e riporta per 6 secondi forma riconosciuta e copertura chiara.
+Con `-Calibration` controlla anche beige, grigio 160 e grigio 176 in circa
+6 secondi, durante i quali il mouse deve restare fermo.
