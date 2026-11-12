@@ -252,3 +252,16 @@ WGC riduce il p95 della lettura da circa 20 ms a circa 1,2 ms, ma nelle tre
 ripetizioni consuma piu CPU di GDI. Non viene quindi integrato come default.
 adaptive.ps1 e il comportamento adattivo sulle undici forme restano invariati.
 Il budget CPU e il confronto complessivo GPU/latenza restano aperti.
+
+Confronto del programma reale con CPU/GPU - 12 novembre 2026
+==========================================================
+Metodo aggiornato, dati, limiti e stato del requisito: PERFORMANCE.txt.
+performance-gate.ps1 esegue CursorTrial.exe in un processo separato e distingue
+la CPU del programma da quella della finestra di riproduzione e del compositore.
+Misura casi fermo/in movimento e verifica che l'adattivo inverta davvero il cursore.
+Riferimenti validi: results/runtime-gdi-20s.csv e results/runtime-gdi-20s-gpu.csv.
+Le prime esecuzioni disturbate dal movimento manuale sono state invalidate.
+Il risultato NON e equivalenza al nativo. L'utente ha confermato un tetto medio
+di 0,5% della CPU totale aggiuntiva, considerando programma e incremento osservato
+nel compositore, oltre a nessun rallentamento percepibile. A 20 Hz, il caso in
+movimento supera il budget e richiede ulteriori ottimizzazioni.

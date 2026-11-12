@@ -257,9 +257,9 @@ internal static partial class CursorTrial
             touched = true;
             Apply(inverted ? inverse : normal, Id);
         }
-        public void RestoreAndVerify()
+        public void RestoreAndVerify(bool force = false)
         {
-            if (touched) { Apply(backup, Id); touched = false; }
+            if (touched || force) { Apply(backup, Id); touched = false; }
             Check(Equal(before, Pixels(LoadCursor(IntPtr.Zero, (IntPtr)Id))), "Restore verification " + Name);
         }
         public void Dispose()
@@ -298,12 +298,12 @@ internal static partial class CursorTrial
             catch { Dispose(); throw; }
         }
         public bool TryGet(IntPtr handle, out PreparedCursor cursor) { return cursors.TryGetValue(handle, out cursor); }
-        public void RestoreAndVerify()
+        public void RestoreAndVerify(bool force = false)
         {
             Exception failure = null;
             foreach (PreparedCursor cursor in cursors.Values)
             {
-                try { cursor.RestoreAndVerify(); }
+                try { cursor.RestoreAndVerify(force); }
                 catch (Exception e) { Console.Error.WriteLine(e.Message); failure = e; }
             }
             if (failure != null) throw new Exception("Some standard cursors could not be restored/verified.", failure);

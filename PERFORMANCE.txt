@@ -1,0 +1,107 @@
+Stato delle prestazioni - 12 novembre 2026
+=========================================
+La versione attuale NON ha consumi equivalenti al cursore nativo.
+L'utente ha confermato un tetto medio di 0,5% della CPU totale aggiuntiva sul suo
+PC, considerando programma e incremento osservato nel compositore, oltre a
+nessun rallentamento percepibile. Con otto processori logici il tetto equivale
+a 40 ms CPU/s aggiuntivi nelle componenti misurate. Il precedente obiettivo
+provvisorio di 1 ms CPU/s non era una soglia concordata con l'utente.
+Non confondere un budget pratico con una dimostrazione di costo nullo.
+
+Confronto sul programma reale
+----------------------------
+Comando da Git Bash:
+powershell.exe -NoProfile -File ./performance-gate.ps1 -Seconds 20 -Rounds 3
+Durata circa 7-8 minuti. Non muovere il mouse e non cliccare durante il test.
+Esc o la chiusura della finestra interrompono e ripristinano le copie originali.
+La prova controlla la posizione ferma e la finestra sotto il puntatore; uno
+spostamento imprevisto o la perdita della finestra invalida l'esecuzione.
+L'assestamento iniziale viene escluso dalle misure.
+
+Tre condizioni, con ordine ruotato nelle tre ripetizioni:
+- normal: freccia originale del tema, senza processo adattivo;
+- native-inverted: arrow_i.cur di Windows alle stesse dimensioni, senza adattivo;
+- adaptive: CursorTrial.exe --adaptive-all 25 in un PROCESSO SEPARATO.
+Ogni condizione misura 20 secondi dopo almeno 3 secondi di riscaldamento.
+La finestra di riproduzione rimane in un altro processo: la sua CPU viene
+registrata separatamente e non attribuita al programma adattivo.
+Il processo adattivo usa lo stesso codice di adaptive.ps1, con la diagnostica
+esistente attiva. Non e una simulazione della classificazione: cambia davvero
+la freccia e deve confermare il ripristino di tutte le undici forme.
+
+Scenari: puntatore fermo sulla superficie bianca; percorso periodico fra testo
+e superfici chiare/scure. La forma visibile nella prova e la freccia; il processo
+prepara tutte le undici forme e campiona solo quella attiva. Questa prova non
+misura separatamente il costo di ogni forma o di un ridimensionamento reale.
+Il controllo dei campioni adattivi scarta il tratto iniziale di avvio e verifica
+la forma attiva, la copertura temporale e, da fermo, lo sfondo chiaro e lo stato
+invertito. Sono attesi veri cambi di stato nel percorso in movimento.
+
+Misure raccolte
+----------------
+- CPU dell'adattivo: TotalProcessorTime ai bordi dell'intervallo, ms CPU/s.
+- CPU del compositore: contatore Process/% Processor Time per i PID dwm correnti,
+  verificando l'identita del processo. Il numeratore Timer100Ns contiene tempo
+  CPU in unita da 100 ns: differenza / 10000 / secondi = ms CPU/s.
+  GetProcessTimes diretto su dwm non era accessibile; nessuno zero viene inventato.
+  https://learn.microsoft.com/en-us/windows/win32/wmisdk/timer-algorithm-counter-types
+- GPU: contatori GPU Engine/Utilization Percentage per dwm e PID adattivo,
+  inizializzati dopo il riscaldamento e letti circa una volta al secondo.
+  Si registra il motore piu occupato a ogni campione, senza sommare percentuali
+  di motori che lavorano in parallelo. Non e la percentuale GPU totale del sistema.
+  https://learn.microsoft.com/en-us/windows/win32/direct3dtools/pix/articles/timing-captures/pix-timing-captures
+- CPU totale del sistema, memoria del processo adattivo e intervalli del replay.
+  Questi intervalli NON sono tempi dei fotogrammi o latenza visiva del puntatore.
+
+Risultati validi di riferimento
+-------------------------------
+results/runtime-gdi-20s.csv: 18 prove, tutte con scia a 7 e 8 processori logici.
+results/runtime-gdi-20s-gpu.csv: 684 campioni GPU per ambito, 22 contatori dwm,
+zero errori di lettura. Nessun motore GPU e stato riportato per il PID adattivo:
+i valori NaN del processo significano non attribuibile, NON costo GPU zero.
+Sono passati i controlli di posizione/finestra, campionamento e ripristino finale.
+Le esecuzioni precedenti interrotte o disturbate non sono incluse nei riferimenti.
+
+Medie di tre ripetizioni, ms CPU per secondo:
+                            normale   invertito nativo   adattivo
+Fermo: CPU programma            0              0           9,889
+Fermo: CPU dwm                125,448        129,879       151,706
+Fermo: programma + dwm         125,448        129,879       161,595
+Movimento: CPU programma        0              0           8,071
+Movimento: CPU dwm            144,158        147,276       189,552
+Movimento: programma + dwm    144,158        147,276       197,623
+
+La CPU del programma da solo equivale a circa 0,10-0,12% della capacita totale
+degli otto processori logici. La differenza MEDIA OSSERVATA programma+dwm rispetto
+al normale e 36,147 ms/s da fermo e 53,465 ms/s in movimento, circa 0,452% e 0,668%
+della capacita totale. Il compositore serve anche altre applicazioni: queste
+differenze non isolano perfettamente il costo causato dal programma.
+
+GPU dwm: media del motore piu occupato, percentuale del singolo motore:
+Fermo: normale 13,459780; invertito 12,558909; adattivo 11,438312.
+Movimento: normale 13,081482; invertito 13,162664; adattivo 13,558533.
+Queste variazioni NON dimostrano un miglioramento da fermo o equivalenza GPU:
+il compositore e globale, il carico del desktop varia e non ci sono contatori
+diretti attribuibili all'adattivo. Il dato non e un confronto energetico.
+
+La CPU totale di sistema era variabile per attivita di altre applicazioni;
+non usarne la differenza per dichiarare un guadagno o un costo causale preciso.
+L'adattivo ha raccolto 500-502 campioni nei suoi 25 secondi, circa 20 Hz,
+con un'inversione da fermo e 13-15 cambi nel percorso. Le durate CPU qui sopra
+riguardano i 20 secondi misurati, non l'intera vita del processo.
+Gli intervalli p95 del replay vanno da 32,340 a 32,607 ms: non certificano
+la fluidita visiva, la latenza end-to-end o il comportamento sotto forte carico.
+
+Esito
+------
+La funzionalita e verificata; l'equivalenza al nativo NON e raggiunta/dimostrata.
+Rispetto al budget ora concordato di 0,5%, la media da fermo e sotto il tetto,
+mentre quella in movimento lo supera. La configurazione da 20 Hz non supera
+quindi il requisito pratico. Restano ottimizzazione, confronto sotto carico e
+controlli su fluidita, memoria/risorse e uso continuativo.
+Non presentare l'interfaccia o il confezionamento come soluzione di questo limite.
+
+Sorgenti della prova, SHA-256:
+CursorTrial.cs 8D16445E39E90A17CB7B94DFF80D79C3F74AF1EFC40820BF87FCD26ABFFBA1B2
+AreaMode.cs 1E6BCBC827F95545EEDF04E332732B2A81AF44E7D07AD7A9CDB90935E0F6B18B
+PerformanceGate.cs 11528A2931703DF68295F7238299B82E663561C2FBF3C051694BAE003F2F5AF2
