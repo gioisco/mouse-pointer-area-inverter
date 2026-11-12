@@ -16,10 +16,9 @@ ancora essere verificati.
 
 ## Installazione e avvio
 
-1. Su GitHub apri **Actions → Windows portable build**, scegli un'esecuzione
-   riuscita del ramo `master` e scarica l'artefatto
-   **MousePointerAreaInverter-windows-x64**. Per scaricare gli artefatti puo
-   essere necessario accedere a GitHub.
+1. Apri le [release su GitHub](https://github.com/gioisco/mouse-pointer-area-inverter/releases)
+   e scarica **MousePointerAreaInverter-v0.1.0-windows-x64.zip** dagli allegati
+   della release **v0.1.0**. Non scegliere gli archivi automatici "Source code".
 2. Estrai lo ZIP scaricato in una cartella a tua scelta.
 3. Apri `MousePointerAreaInverter.exe`. Non compare una finestra o un terminale:
    cerca l'icona nell'area di notifica, eventualmente dentro la freccia delle
@@ -28,6 +27,9 @@ ancora essere verificati.
 Il programma non e firmato: Windows potrebbe mostrare un avviso relativo
 all'autore sconosciuto. Controlla la provenienza del pacchetto prima di aprirlo.
 Non viene installato un servizio e non viene configurato l'avvio automatico.
+Il pacchetto contiene anche `CHANGELOG.md` e `palette.html`. Il file `.sha256`
+allegato alla release riporta l'impronta SHA-256 dello ZIP.
+Le novita e i limiti della versione sono descritti nel [changelog](CHANGELOG.md).
 
 ## Uso
 
@@ -75,7 +77,7 @@ nel registro.
 
 ## Tavolozza di prova
 
-Per provare il cursore su una gamma di sfondi apri `palette.html` dal repository nel browser.
+Per provare il cursore su una gamma di sfondi apri `palette.html` dal pacchetto o dal repository nel browser.
 La pagina mostra la freccia bianca e quella nera su ciascuno sfondo e indica la
 scelta prevista dalle soglie attuali. Clicca sulla variante alternativa solo
 dove vuoi cambiarla e copia il riepilogo. Non serve che l'app sia attiva:
@@ -96,10 +98,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./build.ps1
 ```
 
 Lo script usa il compilatore del .NET Framework di Windows, esegue i self-test
-senza modificare i cursori e crea `dist/MousePointerAreaInverter.zip`.
+senza modificare i cursori e crea `dist/MousePointerAreaInverter-v0.1.0-windows-x64.zip`
+e il relativo file `.sha256`. Con `-OutputDirectory <cartella>` puoi compilare
+in una cartella diversa, anche mentre usi una copia dell'app da un altro percorso.
 La GitHub Action esegue lo stesso comando su un runner Windows e pubblica il
 pacchetto come artefatto. I test visivi e i benchmark richiedono un desktop
 reale e non vengono eseguiti in CI.
+I tag `vX.Y.Z` attivano anche la build di release: il tag deve corrispondere
+alla versione in `AssemblyInfo.cs` e a una sezione di `CHANGELOG.md`.
+Il workflow prepara una bozza e la pubblica solo dopo aver allegato ZIP e checksum.
 
 I vecchi comandi diagnostici, tra cui `adaptive.ps1`, `check-shapes.ps1` e
 `performance-gate.ps1`, restano separati e possono muovere o modificare il

@@ -1,0 +1,59 @@
+name: Publish release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and run non-interactive self-tests
+        shell: powershell
+        run: ./build.ps1
+      - name: Publish portable package and changelog
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $executable = Join-Path $PWD 'dist\MousePointerAreaInverter\MousePointerAreaInverter.exe'
+          $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($executable).ProductVersion
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -ne "v$version") { throw "Tag $tag does not match executable version $version." }
+          $changelog = Get-Content -LiteralPath CHANGELOG.md -Raw -Encoding UTF8
+          $pattern = '(?ms)^## \[' + [regex]::Escape($version) + '\][^\r\n]*\r?\n(?<notes>.*?)(?=^## \[|\z)'
+          if ($changelog -notmatch $pattern) { throw "No changelog section for $version." }
+          $notes = $Matches.notes.Trim()
+          $archive = Join-Path $PWD "dist\MousePointerAreaInverter-v$version-windows-x64.zip"
+          $checksum = "$archive.sha256"
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if (-not (Get-Content -LiteralPath $checksum -Raw).StartsWith($hash + '  ')) { throw 'Checksum mismatch.' }
+          $headers = @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2026-03-10' }
+          $api = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY"
+          $existing = Invoke-RestMethod -Uri "$api/releases" -Headers $headers
+          $release = $existing | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+          if ($release -and -not $release.draft) { throw 'Release already published; refusing to replace assets.' }
+          if (-not $release) {
+            $payload = @{ tag_name = $tag; target_commitish = $env:GITHUB_SHA; name = "v$version"; body = $notes; draft = $true; prerelease = $false } | ConvertTo-Json
+            $release = Invoke-RestMethod -Uri "$api/releases" -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($payload))
+          }
+          $upload = $release.upload_url -replace '\{.*$', ''
+          foreach ($file in @($archive, $checksum)) {
+            $name = Split-Path $file -Leaf
+            foreach ($asset in $release.assets) {
+              if ($asset.name -eq $name) { Invoke-RestMethod -Uri "$api/releases/assets/$($asset.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $type = if ($file -eq $archive) { 'application/zip' } else { 'text/plain' }
+            $asset = Invoke-RestMethod -Uri ($upload + '?name=' + [uri]::EscapeDataString($name)) -Method Post -Headers $headers -ContentType $type -InFile $file
+            if ($asset.state -ne 'uploaded' -or $asset.size -ne (Get-Item -LiteralPath $file).Length) { throw "Incomplete upload: $name" }
+          }
+          $payload = @{ draft = $false; body = $notes; make_latest = 'true' } | ConvertTo-Json
+          $published = Invoke-RestMethod -Uri "$api/releases/$($release.id)" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($payload))
+          Write-Output "Published $($published.html_url)"
