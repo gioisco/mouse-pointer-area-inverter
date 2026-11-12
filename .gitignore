@@ -3,3 +3,4 @@
 
 # Per-run measurements; selected reference results live in results/.
 /*.csv
+/dist/

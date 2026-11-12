@@ -153,12 +153,76 @@ internal static partial class CursorTrial
             previous = bitmap = memory = screen = IntPtr.Zero;
         }
     }
+    struct AdaptiveSample
+    {
+        public int Bright, Count;
+        public bool Inverse, Changed;
+        public string Shape;
+        public double SampleMs, ApplyMs;
+    }
+    sealed class AdaptiveReader : IDisposable
+    {
+        readonly CursorSet shapes;
+        readonly AreaSampler sampler;
+        readonly IntPtr original, inverted;
+        readonly StableState state = new StableState();
+        PreparedCursor previousShape;
+        public AdaptiveReader(IntPtr original, IntPtr inverted, CursorSet shapes)
+        {
+            this.original = original; this.inverted = inverted; this.shapes = shapes;
+            if (shapes == null) sampler = new AreaSampler(original);
+        }
+        public int Read(bool timing, bool applyChanges, out AdaptiveSample sample)
+        {
+            sample = new AdaptiveSample();
+            CursorInfo cursor = new CursorInfo { Size = (uint)Marshal.SizeOf(typeof(CursorInfo)) };
+            PreparedCursor active = null;
+            // The input desktop may be unavailable while locked.
+            if (!GetCursorInfo(ref cursor))
+            {
+                state.ResetPending();
+                if (previousShape != null) previousShape.State.ResetPending();
+                return -1;
+            }
+            if (cursor.Flags != 1 || (shapes == null ? cursor.Cursor != LoadCursor(IntPtr.Zero, (IntPtr)Arrow) : !shapes.TryGet(cursor.Cursor, out active)))
+            {
+                state.ResetPending();
+                if (previousShape != null) previousShape.State.ResetPending();
+                previousShape = null;
+                return 0;
+            }
+            StableState current = active == null ? state : active.State;
+            if (active != previousShape)
+            {
+                if (previousShape != null) previousShape.State.ResetPending();
+                current.ResetPending(); previousShape = active;
+            }
+            if (active != null) active.EnsureCoherentNormal();
+            long start = timing ? Stopwatch.GetTimestamp() : 0;
+            (active == null ? sampler : active.Sampler).Sample(cursor.Position, out sample.Bright, out sample.Count);
+            if (timing) sample.SampleMs = (Stopwatch.GetTimestamp() - start) * 1000.0 / Stopwatch.Frequency;
+            sample.Changed = current.Observe(DesiredState(current.Inverse, sample.Bright, sample.Count), UniformArea(sample.Bright, sample.Count));
+            if (sample.Changed)
+            {
+                start = timing ? Stopwatch.GetTimestamp() : 0;
+                if (applyChanges)
+                {
+                    if (active == null) Apply(current.Inverse ? inverted : original);
+                    else active.Set(current.Inverse);
+                }
+                if (timing) sample.ApplyMs = (Stopwatch.GetTimestamp() - start) * 1000.0 / Stopwatch.Frequency;
+            }
+            sample.Inverse = current.Inverse;
+            sample.Shape = active == null ? "arrow" : active.Name;
+            return 1;
+        }
+        public void Dispose() { if (sampler != null) sampler.Dispose(); }
+    }
     static void RunAdaptive(IntPtr original, IntPtr inverted, int seconds, bool applyChanges = true, CursorSet shapes = null)
     {
         const int period = SamplePeriodMilliseconds;
-        StableState state = new StableState();
         string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adaptive-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".csv");
-        using (AreaSampler sampler = shapes == null ? new AreaSampler(original) : null)
+        using (AdaptiveReader reader = new AdaptiveReader(original, inverted, shapes))
         using (StreamWriter log = new StreamWriter(logPath, false, System.Text.Encoding.UTF8, 65536))
         using (Process process = Process.GetCurrentProcess())
         {
@@ -171,45 +235,23 @@ internal static partial class CursorTrial
             double cpuStart = process.TotalProcessorTime.TotalMilliseconds;
             Stopwatch clock = Stopwatch.StartNew();
             int switches = 0, skips = 0, failures = 0;
-            PreparedCursor previousShape = null;
             while (!Stop.WaitOne(0) && clock.Elapsed.TotalSeconds < seconds)
             {
-                CursorInfo cursor = new CursorInfo { Size = (uint)Marshal.SizeOf(typeof(CursorInfo)) };
-                PreparedCursor activeShape = null;
-                // The input desktop can be unavailable while locked. Retain the last image and retry.
-                if (!GetCursorInfo(ref cursor)) { failures++; state.ResetPending(); }
-                else if (cursor.Flags != 1 || (shapes == null ? cursor.Cursor != LoadCursor(IntPtr.Zero, (IntPtr)Arrow) : !shapes.TryGet(cursor.Cursor, out activeShape)))
-                { skips++; state.ResetPending(); if (previousShape != null) previousShape.State.ResetPending(); previousShape = null; }
+                AdaptiveSample sample;
+                int result = reader.Read(true, applyChanges, out sample);
+                if (result < 0) failures++;
+                else if (result == 0) skips++;
                 else
                 {
-                    StableState activeState = activeShape == null ? state : activeShape.State;
-                    if (activeShape != previousShape)
+                    samples.Add(sample.SampleMs);
+                    if (sample.Changed)
                     {
-                        if (previousShape != null) previousShape.State.ResetPending();
-                        activeState.ResetPending(); previousShape = activeShape;
-                    }
-                    if (activeShape != null) activeShape.EnsureCoherentNormal();
-                    int bright, count;
-                    long sampleStart = Stopwatch.GetTimestamp();
-                    (activeShape == null ? sampler : activeShape.Sampler).Sample(cursor.Position, out bright, out count);
-                    double sampleMs = (Stopwatch.GetTimestamp() - sampleStart) * 1000.0 / Stopwatch.Frequency;
-                    samples.Add(sampleMs);
-                    double applyMs = 0;
-                    if (activeState.Observe(DesiredState(activeState.Inverse, bright, count), UniformArea(bright, count)))
-                    {
-                        Stopwatch update = Stopwatch.StartNew();
-                        if (applyChanges)
-                        {
-                            if (activeShape == null) Apply(activeState.Inverse ? inverted : original);
-                            else activeShape.Set(activeState.Inverse);
-                        }
-                        applyMs = update.Elapsed.TotalMilliseconds;
-                        log.WriteLine(string.Format(CultureInfo.InvariantCulture, "# switch_qpc={0};inverse={1};shape={2}", Stopwatch.GetTimestamp(), activeState.Inverse ? 1 : 0, activeShape == null ? "arrow" : activeShape.Name));
+                        log.WriteLine(string.Format(CultureInfo.InvariantCulture, "# switch_qpc={0};inverse={1};shape={2}", Stopwatch.GetTimestamp(), sample.Inverse ? 1 : 0, sample.Shape));
                         switches++;
-                        Console.WriteLine("{0:F1}s: {1}{2}, light area {3:P0}", clock.Elapsed.TotalSeconds, activeShape == null ? "" : activeShape.Name + " ", activeState.Inverse ? "inverted" : "original", bright / (double)count);
+                        Console.WriteLine("{0:F1}s: {1} {2}, light area {3:P0}", clock.Elapsed.TotalSeconds, sample.Shape, sample.Inverse ? "inverted" : "original", sample.Bright / (double)sample.Count);
                     }
                     log.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0:F1},sample,{1:F4},{2},{3:F4},{4:F4}{5}",
-                        clock.Elapsed.TotalMilliseconds, bright / (double)count, activeState.Inverse ? 1 : 0, sampleMs, applyMs, activeShape == null ? "" : "," + activeShape.Name));
+                        clock.Elapsed.TotalMilliseconds, sample.Bright / (double)sample.Count, sample.Inverse ? 1 : 0, sample.SampleMs, sample.ApplyMs, shapes == null ? "" : "," + sample.Shape));
                 }
                 // Never catch up with a burst of reads when a capture overruns its interval.
                 int delay = Math.Max(1, period - (int)(clock.Elapsed.TotalMilliseconds % period));

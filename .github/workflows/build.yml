@@ -1,0 +1,23 @@
+name: Windows portable build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and run non-interactive self-tests
+        shell: powershell
+        run: ./build.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MousePointerAreaInverter-windows-x64
+          path: dist/MousePointerAreaInverter/
+          if-no-files-found: error

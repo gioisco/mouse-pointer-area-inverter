@@ -9,6 +9,8 @@ provvisorio di 1 ms CPU/s non era una soglia concordata con l'utente.
 Non confondere un budget pratico con una dimostrazione di costo nullo.
 La variante attuale a 100 ms rientra nel budget nelle prove completate:
 0,1599% da fermo e 0,2043% in movimento. Dettagli e limiti in fondo.
+Questi risultati riguardano il programma diagnostico precedente all'app con
+icona: il pacchetto portabile deve ancora ripetere il confronto completo.
 
 Confronto sul programma reale
 ----------------------------
@@ -162,7 +164,7 @@ Il controller registra target_sample_period_ms e adatta il controllo della
 copertura dei campioni alla frequenza configurata. Avvisare l'utente prima di
 ogni prova che muove il mouse; non assumere disponibilita senza preavviso.
 
-Sorgenti della prova, SHA-256:
+Sorgenti della prova a 100 ms precedente all'app con icona, SHA-256:
 CursorTrial.cs 8D16445E39E90A17CB7B94DFF80D79C3F74AF1EFC40820BF87FCD26ABFFBA1B2
 AreaMode.cs FD65C3C2328A38BA9461C1EACA1AC277BD8C920FE1908B9EF417A0C4D3CD24A7
 PerformanceGate.cs 0B38E325A89EE639958DFD5BFD0431167B7C7BF670B4AA89B21B6B20DA00347C
