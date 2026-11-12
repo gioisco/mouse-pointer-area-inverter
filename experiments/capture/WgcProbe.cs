@@ -17,9 +17,9 @@ internal static class WgcProbe
     {
         string mode = args.Length > 0 ? args[0] : "wgc";
         int seconds = 6;
-        if (args.Length > 2 || (mode != "wgc" && mode != "gdi" && mode != "baseline") ||
+        if (args.Length > 2 || (mode != "wgc" && mode != "gdi" && mode != "gdi-monitor" && mode != "gdi-transient" && mode != "baseline") ||
             (args.Length > 1 && (!int.TryParse(args[1], out seconds) || seconds < 4 || seconds > 120)))
-        { Console.Error.WriteLine("Usage: WgcProbe.exe [baseline|gdi|wgc] [measured-seconds:4-120]"); return 1; }
+        { Console.Error.WriteLine("Usage: WgcProbe.exe [baseline|gdi|gdi-monitor|gdi-transient|wgc] [measured-seconds:4-120]"); return 1; }
         return CaptureProbe.CheckWgc(mode, seconds);
     }
 }
@@ -58,6 +58,7 @@ internal static partial class CaptureProbe
     [DllImport("gdi32.dll")] static extern bool GdiFlush();
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr bitmap);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateDC(string driver, string device, IntPtr output, IntPtr init);
 
     internal static int CheckWgc(string mode, int seconds)
     {
@@ -75,6 +76,8 @@ internal static partial class CaptureProbe
         Exception failure = null;
         int samples = 0;
         using (Process process = Process.GetCurrentProcess())
+        using (PerformanceCounter dwmCpuCounter = new PerformanceCounter("Process", "% Processor Time", "dwm", true))
+        using (PerformanceCounter dwmIdCounter = new PerformanceCounter("Process", "ID Process", "dwm", true))
         {
         try
         {
@@ -101,15 +104,17 @@ internal static partial class CaptureProbe
             TextureInfo texture = new TextureInfo { Width = 32, Height = 32, Mips = 1, Array = 1, Format = 87, Samples = 1, Usage = 3, CpuAccess = 0x20000 };
             Marshal.ThrowExceptionForHR(Method<NewTexture>(device, 5)(device, ref texture, IntPtr.Zero, out staging));
             }
-            if (mode == "gdi")
+            if (mode.StartsWith("gdi", StringComparison.Ordinal))
             {
-                gdiScreen = GetDC(IntPtr.Zero); gdiMemory = CreateCompatibleDC(gdiScreen);
+                gdiScreen = mode == "gdi-monitor" ? CreateDC("DISPLAY", screen.Name, IntPtr.Zero, IntPtr.Zero) : GetDC(IntPtr.Zero);
+                gdiMemory = CreateCompatibleDC(gdiScreen);
                 DibHeader header = new DibHeader { Size = 40, Width = 32, Height = -32, Planes = 1, Bits = 32 };
                 gdiBitmap = CreateDIBSection(gdiScreen, ref header, 0, out gdiBits, IntPtr.Zero, 0);
                 if (gdiScreen == IntPtr.Zero || gdiMemory == IntPtr.Zero || gdiBitmap == IntPtr.Zero || gdiBits == IntPtr.Zero)
                     throw new Exception("GDI capture allocation failed.");
                 gdiPrevious = SelectObject(gdiMemory, gdiBitmap);
                 if (gdiPrevious == IntPtr.Zero || gdiPrevious == new IntPtr(-1)) throw new Exception("GDI selection failed.");
+                if (mode == "gdi-transient") { ReleaseDC(IntPtr.Zero, gdiScreen); gdiScreen = IntPtr.Zero; }
             }
             CopyRegion copy = Method<CopyRegion>(context, 46);
             MapTexture map = Method<MapTexture>(context, 14);
@@ -117,7 +122,9 @@ internal static partial class CaptureProbe
             int[] counts = new int[2];
             byte[] pixels = new byte[32 * 32 * 4];
             List<double> durations = new List<double>();
-            double cpuStart = 0, elapsed = 0, cpu = 0, busy = 0;
+            double cpuStart = 0, elapsed = 0, cpu = 0, busy = 0, dwmStart = 0, dwmCpu = 0;
+            int dwmPid = (int)dwmIdCounter.RawValue;
+            if (dwmCpuCounter.CounterType != PerformanceCounterType.Timer100Ns) throw new Exception("Unexpected compositor CPU counter type.");
             ulong idle0 = 0, kernel0 = 0, user0 = 0;
             Stopwatch measured = new Stopwatch();
             bool measuring = false;
@@ -149,12 +156,15 @@ internal static partial class CaptureProbe
                         {
                             if (!GetSystemTimes(out idle0, out kernel0, out user0)) throw new Exception("CPU counters unavailable.");
                             cpuStart = process.TotalProcessorTime.TotalMilliseconds;
+                            dwmStart = dwmCpuCounter.RawValue / 10000.0;
                             measured.Start(); measuring = true;
                         }
                         if (measuring && measured.Elapsed.TotalSeconds >= seconds)
                         {
                             elapsed = measured.Elapsed.TotalSeconds;
                             cpu = process.TotalProcessorTime.TotalMilliseconds - cpuStart;
+                            if ((int)dwmIdCounter.RawValue != dwmPid) throw new Exception("Compositor process changed during probe.");
+                            dwmCpu = (dwmCpuCounter.RawValue / 10000.0 - dwmStart) / elapsed;
                             ulong idle1, kernel1, user1;
                             if (!GetSystemTimes(out idle1, out kernel1, out user1)) throw new Exception("CPU counters unavailable.");
                             double total = (kernel1 - kernel0) + (user1 - user0);
@@ -163,11 +173,18 @@ internal static partial class CaptureProbe
                         }
                         if (mode == "baseline") { if (measuring) samples++; return; }
                         long sampleStart = Stopwatch.GetTimestamp();
-                        if (mode == "gdi")
+                        if (mode.StartsWith("gdi", StringComparison.Ordinal))
                         {
-                            if (!BitBlt(gdiMemory, 0, 0, 32, 32, gdiScreen, target.X, target.Y, 0x00CC0020) || !GdiFlush())
-                                throw new Exception("GDI capture failed.");
-                            Marshal.Copy(gdiBits, pixels, 0, pixels.Length);
+                            int sourceX = target.X - (mode == "gdi-monitor" ? screen.Left : 0);
+                            int sourceY = target.Y - (mode == "gdi-monitor" ? screen.Top : 0);
+                            IntPtr sourceDC = mode == "gdi-transient" ? GetDC(IntPtr.Zero) : gdiScreen;
+                            try
+                            {
+                                if (sourceDC == IntPtr.Zero || !BitBlt(gdiMemory, 0, 0, 32, 32, sourceDC, sourceX, sourceY, 0x00CC0020) || !GdiFlush())
+                                    throw new Exception("GDI capture failed.");
+                                Marshal.Copy(gdiBits, pixels, 0, pixels.Length);
+                            }
+                            finally { if (mode == "gdi-transient" && sourceDC != IntPtr.Zero) ReleaseDC(IntPtr.Zero, sourceDC); }
                         }
                         else
                         {
@@ -231,7 +248,7 @@ internal static partial class CaptureProbe
             durations.Sort();
             double p95 = durations.Count == 0 ? 0 : durations[(int)Math.Ceiling(durations.Count * .95) - 1];
             process.Refresh();
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "METRIC,{0},{1:F3},{2:F3},{3:F3},{4},{5:F4},{6}", mode, elapsed, cpu / elapsed, busy, samples, p95, process.WorkingSet64));
+            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "METRIC,{0},{1:F3},{2:F3},{3:F3},{4},{5:F4},{6},{7:F3}", mode, elapsed, cpu / elapsed, busy, samples, p95, process.WorkingSet64, dwmCpu));
             Console.WriteLine("PASS: " + mode + ", moving pointer and matching light/dark background; no images saved.");
             return 0;
         }
@@ -248,7 +265,10 @@ internal static partial class CaptureProbe
             if (gdiPrevious != IntPtr.Zero && gdiPrevious != new IntPtr(-1)) SelectObject(gdiMemory, gdiPrevious);
             if (gdiBitmap != IntPtr.Zero) DeleteObject(gdiBitmap);
             if (gdiMemory != IntPtr.Zero) DeleteDC(gdiMemory);
-            if (gdiScreen != IntPtr.Zero) ReleaseDC(IntPtr.Zero, gdiScreen);
+            if (gdiScreen != IntPtr.Zero)
+            {
+                if (mode == "gdi-monitor") DeleteDC(gdiScreen); else ReleaseDC(IntPtr.Zero, gdiScreen);
+            }
             if (Cursor.Position == target) Cursor.Position = new System.Drawing.Point(original.X, original.Y);
         }
         }

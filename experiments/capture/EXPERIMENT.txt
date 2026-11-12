@@ -76,3 +76,29 @@ No SDK, compiler or package was installed. The comparison script references
 the Windows Graphics/Foundation metadata and existing .NET Framework assemblies.
 The probes support one selected output and a stable display configuration;
 they are not a multi-monitor or device-loss implementation.
+
+Follow-up: monitor locality and DC lifetime
+------------------------------------------
+The probe now records compositor CPU from the Process/% Processor Time raw
+Timer100Ns counter, confirming that the dwm instance PID remains the same.
+This diagnostic expects the single compositor instance named dwm on this PC;
+the runtime performance gate handles discovered compositor PIDs separately.
+
+Explicit mode selection, from PowerShell at the repository root:
+./compare-capture.ps1 -Seconds 10 -Rounds 2 -Modes baseline,gdi,gdi-monitor,wgc
+./compare-capture.ps1 -Seconds 10 -Rounds 2 -Modes baseline,gdi,gdi-transient
+These remain CAPTURE-ONLY tests: they move the pointer but do not invert it.
+gdi-monitor uses CreateDC(DISPLAY, output-name) and local output coordinates;
+gdi-transient acquires and releases the screen DC around each readback.
+Memory DC/DIB allocations are reused in every GDI variant.
+GetDC-derived DCs are released with ReleaseDC, CreateDC-derived ones with DeleteDC.
+
+References: ../../results/capture-locality-10s.csv and
+../../results/capture-dc-lifetime-10s.csv. Pixel checks passed in all conditions.
+Neither selected-monitor capture nor transient DC acquisition demonstrated a
+useful combined process/compositor cost reduction in these exploratory trials.
+Do not integrate either solely on an assumption that the DC scope/lifetime is
+the bottleneck. WGC also costs more in the follow-up; its earlier 1.2 ms p95 is
+not universal (follow-up readbacks reached about 34-37 ms on this desktop).
+These short, noisy probe results guide the next investigation and do not prove
+causal per-API costs, energy consumption or production performance equivalence.
